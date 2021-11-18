@@ -1,0 +1,25 @@
+[package]
+name = "voltdb-client-rust"
+version = "0.1.0"
+edition = "2018"
+authors = ["johnnywale <johnnywalee@gmail.com>"]
+license = "MIT"
+readme = "README.md"
+description = """
+A socket client library to Voltdb server
+"""
+categories = ["voltdb"]
+keywords = ["voltdb", "asynchronous"]
+
+repository = "https://github.com/johnnywale/voltdb-client-rust"
+
+[dependencies]
+bytebuffer-rs = "0.3.1"
+byteorder = "1.4.3"
+chrono = "0.4"
+bigdecimal = "0.3.0"
+sha2 = "0.9.8"
+quick-error = "2.0.1"
+[dev-dependencies]
+testcontainers = "0.12.0"
+lazy_static = "1.4.0"
