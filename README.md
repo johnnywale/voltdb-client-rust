@@ -8,10 +8,10 @@ Here list the data type and rust data type mapping
 
 | SQL Datatype 	| Compatible Rust Datatypes 	| Option Supported 	|
 |---	|---	|---	|
-| TINYINT 	| bool 	|  ✓	|
-| SMALLINT 	| i8/u8 	|  ✓	|
-| INTEGER 	| i16/u16 	|  ✓	|
-| BIGINT 	| i32/u32 	|  ✓	|
+| TINYINT 	| i8/u8 	|  ✓	|
+| SMALLINT 	| i16/u16 	|  ✓	|
+| INTEGER 	| i32/u32 	|  ✓	|
+| BIGINT 	| i64/u64 	|  ✓	|
 | FLOAT 	| f64 	|  ✓	|
 | DECIMAL 	| bigdecimal::BigDecimal 	|  ✓	|
 | GEOGRAPHY 	| - 	|  	|
@@ -19,7 +19,7 @@ Here list the data type and rust data type mapping
 | VARCHAR 	| String 	| ✓ 	|
 | VARBINARY 	| Vec< u8> 	|  ✓	|
 | TIMESTAMP 	| chrono::DateTime 	|  ✓	|
-
+| TABLE 	| voltdb_client_rust::table::VoltTable 	|  -	|
 
 [voltdb]: https://github.com/VoltDB/voltdb
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
