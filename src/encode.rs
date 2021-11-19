@@ -25,11 +25,11 @@ pub const VAR_BIN_COLUMN: i8 = 25; // varbinary (int)(bytes)
 
 
 pub const NULL_DECIMAL: [u8; 16] = [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
 pub const NULL_BIT_VALUE: [u8; 1] = [128];
-pub const NULL_BYTE_VALUE: [u8; 2] = [128, 0];
-pub const NULL_SHORT_VALUE: [u8; 4] = [128, 0, 0, 0];
-pub const NULL_INT_VALUE: [u8; 8] = [128, 0, 0, 0, 0, 0, 0, 0];
-pub const NULL_LONG_VALUE: [u8; 16] = [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+pub const NULL_SHORT_VALUE: [u8; 2] = [128, 0];
+pub const NULL_INT_VALUE: [u8; 4] = [128, 0, 0, 0];
+pub const NULL_LONG_VALUE: [u8; 8] = [128, 0, 0, 0, 0, 0, 0, 0];
 pub const NULL_TIMESTAMP: [u8; 8] = [128, 0, 0, 0, 0, 0, 0, 0];
 
 
@@ -110,7 +110,7 @@ impl<T> From<PoisonError<T>> for VoltError {
 pub trait Value: Debug {
     fn get_write_length(&self) -> i32;
     fn marshal(&self, bytebuffer: &mut ByteBuffer);
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8);
     fn to_value_string(&self) -> String;
 }
 
@@ -140,7 +140,7 @@ impl Value for bool {
         bytebuffer.write_bool(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_bool(*self);
     }
 
@@ -160,7 +160,7 @@ impl Value for BigDecimal {
         self.marshal_in_table(bytebuffer, DECIMAL_COLUMN);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         let (b, _) = self.clone().with_scale(12).into_bigint_and_exponent();
         let bs = b.to_signed_bytes_be();
         let pad = 16 - bs.len();
@@ -186,9 +186,29 @@ impl Value for i8 {
         bytebuffer.write_i8(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
-        bytebuffer.write_i8(0);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+     //   bytebuffer.write_i8(0);
         bytebuffer.write_i8(*self);
+    }
+
+    fn to_value_string(&self) -> String {
+        return self.to_string();
+    }
+}
+
+impl Value for u8 {
+    fn get_write_length(&self) -> i32 {
+        return 2;
+    }
+
+    fn marshal(&self, bytebuffer: &mut ByteBuffer) {
+        bytebuffer.write_i8(TINYINT_COLUMN);
+        bytebuffer.write_u8(*self);
+    }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+      //  bytebuffer.write_u8(0);
+        bytebuffer.write_u8(*self);
     }
 
     fn to_value_string(&self) -> String {
@@ -206,9 +226,29 @@ impl Value for i16 {
         bytebuffer.write_i16(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
-        bytebuffer.write_i16(0);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+    //    bytebuffer.write_i16(0);
         bytebuffer.write_i16(*self);
+    }
+
+    fn to_value_string(&self) -> String {
+        return self.to_string();
+    }
+}
+
+impl Value for u16 {
+    fn get_write_length(&self) -> i32 {
+        return 3;
+    }
+
+    fn marshal(&self, bytebuffer: &mut ByteBuffer) {
+        bytebuffer.write_i8(SHORT_COLUMN);
+        bytebuffer.write_u16(*self);
+    }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+      //  bytebuffer.write_i16(0);
+        bytebuffer.write_u16(*self);
     }
 
     fn to_value_string(&self) -> String {
@@ -226,9 +266,29 @@ impl Value for i32 {
         bytebuffer.write_i32(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
-        bytebuffer.write_i32(0);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+     //   bytebuffer.write_i32(0);
         bytebuffer.write_i32(*self);
+    }
+
+    fn to_value_string(&self) -> String {
+        return self.to_string();
+    }
+}
+
+impl Value for u32 {
+    fn get_write_length(&self) -> i32 {
+        return 5;
+    }
+
+    fn marshal(&self, bytebuffer: &mut ByteBuffer) {
+        bytebuffer.write_i8(INT_COLUMN);
+        bytebuffer.write_u32(*self);
+    }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+     //   bytebuffer.write_u32(0);
+        bytebuffer.write_u32(*self);
     }
 
     fn to_value_string(&self) -> String {
@@ -246,9 +306,29 @@ impl Value for i64 {
         bytebuffer.write_i64(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
-        bytebuffer.write_i64(0);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+     //   bytebuffer.write_i64(0);
         bytebuffer.write_i64(*self);
+    }
+
+    fn to_value_string(&self) -> String {
+        return self.to_string();
+    }
+}
+
+impl Value for u64 {
+    fn get_write_length(&self) -> i32 {
+        return 9;
+    }
+
+    fn marshal(&self, bytebuffer: &mut ByteBuffer) {
+        bytebuffer.write_i8(LONG_COLUMN);
+        bytebuffer.write_u64(*self);
+    }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+       // bytebuffer.write_u64(0);
+        bytebuffer.write_u64(*self);
     }
 
     fn to_value_string(&self) -> String {
@@ -266,7 +346,7 @@ impl Value for f64 {
         bytebuffer.write_f64(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_f64(*self);
     }
 
@@ -283,11 +363,10 @@ impl Value for String {
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
         bytebuffer.write_i8(STRING_COLUMN);
-        // write length , then data
         bytebuffer.write_string(self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_string(self);
     }
 
@@ -307,7 +386,7 @@ impl Value for &str {
         bytebuffer.write_string(self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_string(self);
     }
 
@@ -328,7 +407,7 @@ impl Value for Vec<u8> {
         bytebuffer.write_bytes(&self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_u32(self.len() as u32);
         bytebuffer.write_bytes(&self);
     }
@@ -349,7 +428,7 @@ impl Value for [u8] {
         bytebuffer.write_bytes(&self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_u32(self.len() as u32);
         bytebuffer.write_bytes(&self);
     }
@@ -368,7 +447,7 @@ impl Value for DateTime<Utc> {
         bytebuffer.write_i64(self.timestamp_millis() * 1000);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_i64(self.timestamp_millis() * 1000);
     }
 
@@ -419,7 +498,7 @@ mod tests {
 
     #[test]
     fn test_big_test_bytes() {
-        let i = ByteBuffer::from_bytes(&NULL_BYTE_VALUE).read_i8().unwrap();
+        let i = ByteBuffer::from_bytes(&NULL_BIT_VALUE).read_i8().unwrap();
         assert_eq!(i, -128);
         let i = ByteBuffer::from_bytes(&NULL_SHORT_VALUE).read_i16().unwrap();
         assert_eq!(i, -32768);

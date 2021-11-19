@@ -9,7 +9,6 @@ use chrono::{DateTime, TimeZone, Utc};
 use crate::encode::{NULL_BIT_VALUE, NULL_DECIMAL, NULL_TIMESTAMP, NULL_VARCHAR, TABLE, Value, VoltError};
 use crate::response::ResponseStatus::Success;
 use crate::response::VoltResponseInfo;
-use crate::volt_param;
 
 const MIN_INT8: i8 = -1 << 7;
 
@@ -49,7 +48,7 @@ impl Value for VoltTable {
         println!("{}", bytebuffer.len())
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, _bytebuffer: &mut ByteBuffer, _column_type: i8) {
         //
     }
 
@@ -237,7 +236,7 @@ impl VoltTable {
                 }
             }
             crate::encode::SHORT_COLUMN => {
-                let res = self.get_i8_by_idx(column)?;
+                let res = self.get_i16_by_idx(column)?;
                 match res {
                     None => { Ok(None) }
                     Some(v) => {
@@ -246,7 +245,7 @@ impl VoltTable {
                 }
             }
             crate::encode::INT_COLUMN => {
-                let res = self.get_i16_by_idx(column)?;
+                let res = self.get_i32_by_idx(column)?;
                 match res {
                     None => { Ok(None) }
                     Some(v) => {
@@ -256,7 +255,7 @@ impl VoltTable {
             }
 
             crate::encode::LONG_COLUMN => {
-                let res = self.get_i32_by_idx(column)?;
+                let res = self.get_i64_by_idx(column)?;
                 match res {
                     None => { Ok(None) }
                     Some(v) => {
@@ -512,6 +511,7 @@ fn decode_table_common(bytebuffer: &mut ByteBuffer) -> Result<i16, VoltError> {
 #[cfg(test)]
 mod tests {
     use crate::encode::{DECIMAL_COLUMN, FLOAT_COLUMN, INT_COLUMN, LONG_COLUMN, SHORT_COLUMN, STRING_COLUMN, TIMESTAMP_COLUMN, TINYINT_COLUMN, VAR_BIN_COLUMN};
+    use crate::volt_param;
 
     use super::*;
 
@@ -538,17 +538,18 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_table() {
+    fn test_encode_table() -> Result<(), VoltError> {
         let bs = vec! {21, 0, 0, 0, 86, 0, 0, 0, 49, 128, 0, 4, 6, 6, 3, 6, 0, 0, 0, 2, 73, 68, 0, 0, 0, 7, 86, 69, 82, 83, 73, 79, 78, 0, 0, 0, 7, 68, 69, 76, 69, 84, 69, 68, 0, 0, 0, 10, 67, 82, 69, 65, 84, 69, 68, 95, 66, 89, 0, 0, 0, 1, 0, 0, 0, 25, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1};
         let header = vec!["ID", "VERSION", "DELETED", "CREATED_BY"];
         let tp = vec![LONG_COLUMN, LONG_COLUMN, TINYINT_COLUMN, LONG_COLUMN];
         let header: Vec<String> = header.iter().map(|f| f.to_string()).collect::<Vec<String>>();
         let mut x = VoltTable::new_table(tp, header);
-        let data = volt_param! {1 as i32, 1 as i32, false,  1 as i32 };
-        x.add_row(data);
+        let data = volt_param! {1 as i64, 1 as i64, false,  1 as i64 };
+        x.add_row(data)?;
         let mut bf = ByteBuffer::new();
         x.marshal(&mut bf);
         assert_eq!(bs, bf.to_bytes());
+        Ok({})
     }
 
     #[test]
@@ -565,9 +566,9 @@ mod tests {
         assert_eq!(types, vec![TINYINT_COLUMN, SHORT_COLUMN, INT_COLUMN, LONG_COLUMN, FLOAT_COLUMN, DECIMAL_COLUMN, STRING_COLUMN, VAR_BIN_COLUMN, TIMESTAMP_COLUMN]);
 
         let i1 = table.get_bool_by_idx(0).unwrap();
-        let i2 = table.get_i8_by_idx(1).unwrap();
-        let i3 = table.get_i16_by_idx(2).unwrap();
-        let i4 = table.get_i32_by_idx(3).unwrap();
+        let i2 = table.get_i16_by_idx(1).unwrap();
+        let i3 = table.get_i32_by_idx(2).unwrap();
+        let i4 = table.get_i64_by_idx(3).unwrap();
         let i5 = table.get_f64_by_idx(4).unwrap();
         let i6 = table.get_decimal_by_idx(5).unwrap();
         let i7 = table.get_string_by_idx(6).unwrap();

@@ -61,11 +61,7 @@ fn populate(node: &mut Node) {
                     t9 TIMESTAMP,
                     );";
         execute_success(node, create);
-
-        let script = "CREATE PROCEDURE
-PARTITION ON TABLE ACCOUNT_IP COLUMN ACCOUNT_ID
-FROM CLASS com.johnny.ApplicationCreate;
--- execute the batch of DDL statements";
+        let script = "CREATE PROCEDURE  FROM CLASS com.johnny.ApplicationCreate;";
         let x = node.query(script).unwrap();
         let mut table = x.recv().unwrap();
         assert!(table.has_error().is_none());
@@ -95,9 +91,9 @@ fn table_column_test() -> Result<(), VoltError> {
     #[derive(Debug)]
     struct Test {
         t1: Option<bool>,
-        t2: Option<i8>,
-        t3: Option<i16>,
-        t4: Option<i32>,
+        t2: Option<i16>,
+        t3: Option<i32>,
+        t4: Option<i64>,
         t5: Option<f64>,
         t6: Option<BigDecimal>,
         t7: Option<String>,
@@ -107,9 +103,9 @@ fn table_column_test() -> Result<(), VoltError> {
     impl From<&mut VoltTable> for Test {
         fn from(table: &mut VoltTable) -> Self {
             let t1 = table.get_bool_by_column("T1").unwrap();
-            let t2 = table.get_i8_by_column("t2").unwrap();
-            let t3 = table.get_i16_by_column("t3").unwrap();
-            let t4 = table.get_i32_by_column("t4").unwrap();
+            let t2 = table.get_i16_by_column("t2").unwrap();
+            let t3 = table.get_i32_by_column("t3").unwrap();
+            let t4 = table.get_i64_by_column("t4").unwrap();
             let t5 = table.get_f64_by_column("t5").unwrap();
             let t6 = table.get_decimal_by_column("t6").unwrap();
             let t7 = table.get_string_by_column("t7").unwrap();
@@ -146,9 +142,9 @@ fn table_column_test() -> Result<(), VoltError> {
     table.advance_row();
     let test: Test = table.map_row();
     assert_eq!(test.t1, Some(true));
-    assert_eq!(test.t2, Some(2 as i8));
-    assert_eq!(test.t3, Some(3 as i16));
-    assert_eq!(test.t4, Some(4 as i32));
+    assert_eq!(test.t2, Some(2 as i16));
+    assert_eq!(test.t3, Some(3 as i32));
+    assert_eq!(test.t4, Some(4 as i64));
     assert_eq!(test.t5, Some(5 as f64));
     assert_eq!(test.t6, Some(BigDecimal::from(6)));
     assert_eq!(test.t7, Some("7".to_owned()));
