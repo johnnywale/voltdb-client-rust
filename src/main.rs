@@ -12,7 +12,7 @@ use voltdb_client_rust::volt_param;
 fn main() -> Result<(), VoltError> {
     #[derive(Debug)]
     struct Test {
-        t1: Option<bool>,
+        t1: Option<i8>,
         t2: Option<i16>,
         t3: Option<i32>,
         t4: Option<i64>,
@@ -24,25 +24,16 @@ fn main() -> Result<(), VoltError> {
     }
     impl From<&mut VoltTable> for Test {
         fn from(table: &mut VoltTable) -> Self {
-            let t1 = table.get_bool_by_column("T1").unwrap();
-            let t2 = table.get_i16_by_column("t2").unwrap();
-            let t3 = table.get_i32_by_column("t3").unwrap();
-            let t4 = table.get_i64_by_column("t4").unwrap();
-            let t5 = table.get_f64_by_column("t5").unwrap();
-            let t6 = table.get_decimal_by_column("t6").unwrap();
-            let t7 = table.get_string_by_column("t7").unwrap();
-            let t8 = table.get_bytes_op_by_column("t8").unwrap();
-            let t9 = table.get_time_by_column("t9").unwrap();
             Test {
-                t1,
-                t2,
-                t3,
-                t4,
-                t5,
-                t6,
-                t7,
-                t8,
-                t9,
+                t1: table.get_i8_by_column("T1").unwrap(),
+                t2: table.get_i16_by_column("t2").unwrap(),
+                t3: table.get_i32_by_column("t3").unwrap(),
+                t4: table.get_i64_by_column("t4").unwrap(),
+                t5: table.get_f64_by_column("t5").unwrap(),
+                t6: table.get_decimal_by_column("t6").unwrap(),
+                t7: table.get_string_by_column("t7").unwrap(),
+                t8: table.get_bytes_op_by_column("t8").unwrap(),
+                t9: table.get_time_by_column("t9").unwrap(),
             }
         }
     }
@@ -73,6 +64,7 @@ fn main() -> Result<(), VoltError> {
 
     let insert = "insert into test_types (T1) values (NULL);";
     block_for_result(&node.query(insert)?)?;
+    block_for_result(&node.query("insert into test_types (T1,T2,T3,T4) values (1, -32767, -2147483647, -9223372036854775807 );")?)?;
     block_for_result(&node.query("insert into test_types (T1,T2,T3,T4) values (1, 32767, 2147483647, 9223372036854775807 );")?)?;
     let mut table = block_for_result(&node.query("select * from test_types")?)?;
     while table.advance_row() {
