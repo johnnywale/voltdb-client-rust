@@ -1,6 +1,7 @@
 use bytebuffer::ByteBuffer;
 
 use crate::encode::VoltError;
+use crate::response::ResponseStatus::Success;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ResponseStatus {
@@ -19,6 +20,12 @@ pub enum ResponseStatus {
     UnsupportedDynamicChange,
     UninitializedAppStatusCode,
     Customized(i8),
+}
+
+impl Default for ResponseStatus {
+    fn default() -> Self {
+        return Success;
+    }
 }
 
 impl From<i8> for ResponseStatus {
@@ -43,7 +50,7 @@ impl From<i8> for ResponseStatus {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct VoltResponseInfo {
     handle: i64,
     status: ResponseStatus,
@@ -53,6 +60,7 @@ pub struct VoltResponseInfo {
     cluster_round_trip_time: i32,
     num_tables: i16,
 }
+
 
 impl VoltResponseInfo {
     #[allow(dead_code)]

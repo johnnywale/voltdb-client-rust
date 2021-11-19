@@ -6,9 +6,10 @@ use bigdecimal::num_bigint::BigInt;
 use bytebuffer::ByteBuffer;
 use chrono::{DateTime, TimeZone, Utc};
 
-use crate::encode::{NULL_BIT_VALUE, NULL_DECIMAL, NULL_TIMESTAMP, NULL_VARCHAR, VoltError, Value};
-use crate::response::VoltResponseInfo;
+use crate::encode::{NULL_BIT_VALUE, NULL_DECIMAL, NULL_TIMESTAMP, NULL_VARCHAR, TABLE, Value, VoltError};
 use crate::response::ResponseStatus::Success;
+use crate::response::VoltResponseInfo;
+use crate::volt_param;
 
 const MIN_INT8: i8 = -1 << 7;
 
@@ -16,6 +17,8 @@ const MIN_INT8: i8 = -1 << 7;
 pub struct VoltTable {
     info: VoltResponseInfo,
     column_count: i16,
+    info_bytes: ByteBuffer,
+    column_info_bytes: ByteBuffer,
     column_types: Vec<i8>,
     column_names: Vec<String>,
     num_rows: i32,
@@ -23,63 +26,106 @@ pub struct VoltTable {
     row_index: i32,
     cn_to_ci: HashMap<String, i16>,
     column_offsets: Vec<i32>,
+    header_size: i32,
+    total_size: i32,
 }
 
-// macro_rules! gen_method {
-//     ( {$( $x:expr ),+ } , $b: expr) => {
-//           paste::item! {
-//             $(
-//                 pub fn [<get_ $x _by_column>] (&mut self, column: &str) -> Result<Option<  [<$x>] >, VoltError> {
-//                     let idx = self.get_column_index(column)?;
-//                     return Ok(self.[<get_ $x _by_idx>](idx)?);
-//                 }
-//
-//                 pub fn [<get_ $x _by_idx>](&mut self, column: i16) -> Result<Option<  [<$x>] >, VoltError> {
-//                     let bs = self.get_bytes_by_idx(column)?;
-//                     if bs == $b {
-//                        return Ok(Option::None);
-//                     }
-//                     let mut buffer = ByteBuffer::from_bytes(&bs);
-//                     let value = buffer.[<read_ $x>] ()?;
-//                     return Ok(Some(value));
-//                 }
-//             )*
-//         }
-//     };
-// }
-impl VoltTable {
-    // gen_method!({i8,u8},NULL_BYTE_VALUE);
-    // gen_method!({i16,u16},NULL_SHORT_VALUE);
-    // gen_method!({i32,u32},NULL_INT_VALUE);
-    // gen_method!({i64,u64},NULL_LONG_VALUE);
-    // gen_method!({f32,f64},NULL_FLOAT_VALUE);
+impl Value for VoltTable {
+    fn get_write_length(&self) -> i32 {
+        return self.total_size + 5;
+    }
+
+    fn marshal(&self, bytebuffer: &mut ByteBuffer) {
+        bytebuffer.write_i8(TABLE);
+        bytebuffer.write_u32(self.total_size as u32);
+        bytebuffer.write_u32(self.header_size as u32);
+        bytebuffer.write_u8(128);
+        bytebuffer.write_bytes(&*self.column_info_bytes.to_bytes());
+        bytebuffer.write_u32(self.num_rows as u32);
+        self.rows.iter().for_each(|f| {
+            bytebuffer.write_u32(f.len() as u32);
+            bytebuffer.write_bytes(&*f.to_bytes());
+        });
+        println!("{}", bytebuffer.len())
+    }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        //
+    }
+
+    fn to_value_string(&self) -> String {
+        return "table".to_owned();
+    }
 }
-
-
 
 
 impl VoltTable {
+    // COLUMN HEADER:
+    // [int: column header size in bytes (non-inclusive)]
+    // [byte: table status code]
+    // [short: num columns]
+    // [byte: column type] * num columns
+    // [string: column name] * num columns
+    // TABLE BODY DATA:
+    // [int: num tuples]
+    // [int: row size (non inclusive), blob row data] * num tuples
+    pub fn new_table(header_types: Vec<i8>, header_names: Vec<String>) -> Self {
+        let mut column_info_bytes = ByteBuffer::new();
+
+
+        let column_count = header_types.len() as i16;
+        column_info_bytes.write_i16(column_count);
+        header_types.iter().for_each(|f| column_info_bytes.write_i8(*f));
+        header_names.iter().for_each(|f| column_info_bytes.write_string(f));
+        let header_size = (1 + column_info_bytes.len()) as i32;
+        let total_size = header_size + 8;
+        //
+        return VoltTable {
+            info: Default::default(),
+            column_count,
+            info_bytes: Default::default(),
+            column_info_bytes,
+            column_types: header_types,
+            column_names: header_names,
+            num_rows: 0,
+            rows: vec![],
+            row_index: 0,
+            cn_to_ci: Default::default(),
+            column_offsets: vec![],
+            header_size,
+            total_size,
+        };
+    }
+
+    pub fn add_row(&mut self, row: Vec<&dyn Value>) -> Result<i16, VoltError> {
+        let mut bf: ByteBuffer = ByteBuffer::new();
+        self.column_types.iter().enumerate().for_each(|(f, v)| {
+            let da = *row.get(f).unwrap();
+            da.marshal_in_table(&mut bf, *v);
+        });
+        let len = bf.len();
+        self.rows.push(bf);
+        self.num_rows = self.num_rows + 1;
+        self.total_size = self.total_size + (len + 4) as i32;
+        return Ok(1);
+    }
+
+
     pub fn get_column_index(&mut self, column: &str) -> Result<i16, VoltError> {
         let idx = self.cn_to_ci.get(column.to_uppercase().as_str()).ok_or(VoltError::NoValue(column.to_owned()))?;
         return Ok(*idx);
     }
 
+    pub fn map_row<'a, T: From<&'a mut VoltTable>>(&'a mut self) -> T {
+        return T::from(self);
+    }
+
     pub fn debug_row(&mut self) -> String {
-        let size = self.column_names.len();
-        let mut res = String::new();
-        for i in 0..size {
-            let z = self.get_value_by_idx(i as i16).unwrap();
-            match z {
-                None => {
-                    res.push_str("None ,")
-                }
-                Some(v) => {
-                    res.push_str(v.to_value_string().as_str());
-                    res.push_str(" ,")
-                }
-            }
-        }
-        return res;
+        let names = self.columns();
+        let x: Vec<String> = self.columns_type().into_iter().enumerate().map(|(idx, tp)| {
+            return format!("{} {:?}", names.get(idx).unwrap(), self.get_value_by_idx_type(idx as i16, tp));
+        }).collect();
+        return x.join(" ");
     }
 
 
@@ -177,8 +223,7 @@ impl VoltTable {
         return Ok(self.get_value_by_idx(idx)?);
     }
 
-    pub fn get_value_by_idx(&mut self, column: i16) -> Result<Option<Box<dyn Value>>, VoltError> {
-        let tp = self.get_column_type_by_idx(column)?;
+    fn get_value_by_idx_type(&mut self, column: i16, tp: i8) -> Result<Option<Box<dyn Value>>, VoltError> {
         return match tp {
             crate::encode::TINYINT_COLUMN => {
                 let res = self.get_bool_by_idx(column)?;
@@ -274,6 +319,12 @@ impl VoltTable {
         };
     }
 
+
+    pub fn get_value_by_idx(&mut self, column: i16) -> Result<Option<Box<dyn Value>>, VoltError> {
+        let tp = self.get_column_type_by_idx(column)?;
+        return self.get_value_by_idx_type(column, tp);
+    }
+
     pub fn get_bool_by_column(&mut self, column: &str) -> Result<Option<bool>, VoltError> {
         let idx = self.get_column_index(column)?;
         return Ok(self.get_bool_by_idx(idx)?);
@@ -296,10 +347,11 @@ impl VoltTable {
     }
 
     pub fn get_bytes_op_by_idx(&mut self, column: i16) -> Result<Option<Vec<u8>>, VoltError> {
-        let bs = self.get_bytes_by_idx(column)?;
+        let mut bs = self.get_bytes_by_idx(column)?;
         if bs == NULL_VARCHAR {
             return Ok(Option::None);
         }
+        bs.drain(0..4);
         return Ok(Option::Some(bs));
     }
 
@@ -389,6 +441,8 @@ pub fn new_volt_table(bytebuffer: &mut ByteBuffer, info: VoltResponseInfo) -> Re
         return Ok(VoltTable {
             info,
             column_count: -1,
+            info_bytes: Default::default(),
+            column_info_bytes: Default::default(),
             column_types: vec![],
             column_names: vec![],
             num_rows: -1,
@@ -396,19 +450,25 @@ pub fn new_volt_table(bytebuffer: &mut ByteBuffer, info: VoltResponseInfo) -> Re
             row_index: -1,
             cn_to_ci: Default::default(),
             column_offsets: vec![],
+            header_size: 0,
+            total_size: 0,
         });
     }
 
     let columns = decode_table_common(bytebuffer)?;
     let mut column_types: Vec<i8> = Vec::with_capacity(columns as usize);
+    let mut column_info_bytes = ByteBuffer::new();
     for _ in 0..columns {
-        column_types.push(bytebuffer.read_i8()?);
+        let tp = bytebuffer.read_i8()?;
+        column_types.push(tp);
+        column_info_bytes.write_i8(tp);
     }
     let mut column_names: Vec<String> = Vec::with_capacity(columns as usize);
     let mut cn_to_ci = HashMap::with_capacity(columns as usize);
     for i in 0..columns {
         let name = bytebuffer.read_string()?;
         column_names.push(name.clone());
+        column_info_bytes.write_string(name.as_str());
         cn_to_ci.insert(name, i);
     }
     let row_count = bytebuffer.read_i32()?;
@@ -423,6 +483,8 @@ pub fn new_volt_table(bytebuffer: &mut ByteBuffer, info: VoltResponseInfo) -> Re
     return Ok(VoltTable {
         info,
         column_count: columns,
+        info_bytes: Default::default(),
+        column_info_bytes,
         column_types,
         column_names,
         num_rows: row_count,
@@ -430,6 +492,8 @@ pub fn new_volt_table(bytebuffer: &mut ByteBuffer, info: VoltResponseInfo) -> Re
         row_index: -1,
         cn_to_ci,
         column_offsets: vec![],
+        header_size: 0,
+        total_size: 0,
     });
 }
 
@@ -471,6 +535,20 @@ mod tests {
 "#;
             println!("{}", shader.replace("${type}", tp).replace("${none}", none));
         }
+    }
+
+    #[test]
+    fn test_encode_table() {
+        let bs = vec! {21, 0, 0, 0, 86, 0, 0, 0, 49, 128, 0, 4, 6, 6, 3, 6, 0, 0, 0, 2, 73, 68, 0, 0, 0, 7, 86, 69, 82, 83, 73, 79, 78, 0, 0, 0, 7, 68, 69, 76, 69, 84, 69, 68, 0, 0, 0, 10, 67, 82, 69, 65, 84, 69, 68, 95, 66, 89, 0, 0, 0, 1, 0, 0, 0, 25, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+        let header = vec!["ID", "VERSION", "DELETED", "CREATED_BY"];
+        let tp = vec![LONG_COLUMN, LONG_COLUMN, TINYINT_COLUMN, LONG_COLUMN];
+        let header: Vec<String> = header.iter().map(|f| f.to_string()).collect::<Vec<String>>();
+        let mut x = VoltTable::new_table(tp, header);
+        let data = volt_param! {1 as i32, 1 as i32, false,  1 as i32 };
+        x.add_row(data);
+        let mut bf = ByteBuffer::new();
+        x.marshal(&mut bf);
+        assert_eq!(bs, bf.to_bytes());
     }
 
     #[test]

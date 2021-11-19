@@ -1,12 +1,12 @@
 [package]
 name = "voltdb-client-rust"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2018"
 authors = ["johnnywale <johnnywalee@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 description = """
-A socket client library to Voltdb server
+A socket client library for Voltdb server
 """
 categories = ["voltdb"]
 keywords = ["voltdb", "asynchronous"]

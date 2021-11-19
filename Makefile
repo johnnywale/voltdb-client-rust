@@ -27,7 +27,7 @@ coverage:
 	cargo kcov
 
 docker-run:
-	docker run  --env HOST_COUNT=1 --publish 21211:21211  voltdb/voltdb-community:9.2.1
+	docker run  --env HOST_COUNT=1 --publish 21211:21211 --publish 8080:8080 voltdb/voltdb-community:9.2.1
 
 gen:
 	cargo run --bin force-build --features build_deps

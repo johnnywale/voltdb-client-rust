@@ -13,7 +13,7 @@ impl VoltTable {
         if bs == NULL_BYTE_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let mut buffer = ByteBuffer::from_bytes(&bs[1..]);
         let value = buffer.read_i8()?;
         return Ok(Some(value));
     }
@@ -29,7 +29,7 @@ impl VoltTable {
         if bs == NULL_BYTE_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let mut buffer = ByteBuffer::from_bytes(&bs[1..]);
         let value = buffer.read_u8()?;
         return Ok(Some(value));
     }
@@ -45,7 +45,7 @@ impl VoltTable {
         if bs == NULL_SHORT_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let mut buffer = ByteBuffer::from_bytes(&bs[2..]);
         let value = buffer.read_i16()?;
         return Ok(Some(value));
     }
@@ -61,7 +61,7 @@ impl VoltTable {
         if bs == NULL_SHORT_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let mut buffer = ByteBuffer::from_bytes(&bs[2..]);
         let value = buffer.read_u16()?;
         return Ok(Some(value));
     }
@@ -77,7 +77,7 @@ impl VoltTable {
         if bs == NULL_INT_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let mut buffer = ByteBuffer::from_bytes(&bs[4..]);
         let value = buffer.read_i32()?;
         return Ok(Some(value));
     }
@@ -93,7 +93,7 @@ impl VoltTable {
         if bs == NULL_INT_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let mut buffer = ByteBuffer::from_bytes(&bs[4..]);
         let value = buffer.read_u32()?;
         return Ok(Some(value));
     }
@@ -109,7 +109,7 @@ impl VoltTable {
         if bs == NULL_LONG_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let mut buffer = ByteBuffer::from_bytes(&bs[8..]);
         let value = buffer.read_i64()?;
         return Ok(Some(value));
     }
@@ -125,7 +125,7 @@ impl VoltTable {
         if bs == NULL_LONG_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let mut buffer = ByteBuffer::from_bytes(&bs[8..]);
         let value = buffer.read_u64()?;
         return Ok(Some(value));
     }

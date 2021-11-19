@@ -1,6 +1,6 @@
-mod table;
-mod response;
+pub mod table;
 pub mod node;
-mod procedure_invocation;
 pub mod encode;
+mod procedure_invocation;
+mod response;
 mod generate;

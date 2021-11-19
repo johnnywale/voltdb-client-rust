@@ -1,27 +1,27 @@
-use std::fmt::{Formatter, Write, Debug};
+use std::fmt::Debug;
 use std::str::Utf8Error;
 use std::sync::PoisonError;
 
 use bigdecimal::BigDecimal;
 use bytebuffer::ByteBuffer;
 use chrono::{DateTime, Utc};
-use quick_error::{quick_error};
+use quick_error::quick_error;
 
-use crate::response::{VoltResponseInfo};
+use crate::response::VoltResponseInfo;
 
-pub(crate) const ARRAY_COLUMN: i8 = -99;
-pub(crate) const NULL_COLUMN: i8 = 1;
-pub(crate) const TINYINT_COLUMN: i8 = 3;
-pub(crate) const SHORT_COLUMN: i8 = 4;
-pub(crate) const INT_COLUMN: i8 = 5;
-pub(crate) const LONG_COLUMN: i8 = 6;
-pub(crate) const FLOAT_COLUMN: i8 = 8;
-pub(crate) const STRING_COLUMN: i8 = 9;
-pub(crate) const TIMESTAMP_COLUMN: i8 = 11;
 #[allow(dead_code)]
-pub(crate) const TABLE: i8 = 21;
-pub(crate) const DECIMAL_COLUMN: i8 = 22;
-pub(crate) const VAR_BIN_COLUMN: i8 = 25; // varbinary (int)(bytes)
+pub const ARRAY_COLUMN: i8 = -99;
+pub const NULL_COLUMN: i8 = 1;
+pub const TINYINT_COLUMN: i8 = 3;
+pub const SHORT_COLUMN: i8 = 4;
+pub const INT_COLUMN: i8 = 5;
+pub const LONG_COLUMN: i8 = 6;
+pub const FLOAT_COLUMN: i8 = 8;
+pub const STRING_COLUMN: i8 = 9;
+pub const TIMESTAMP_COLUMN: i8 = 11;
+pub const TABLE: i8 = 21;
+pub const DECIMAL_COLUMN: i8 = 22;
+pub const VAR_BIN_COLUMN: i8 = 25; // varbinary (int)(bytes)
 
 
 pub const NULL_DECIMAL: [u8; 16] = [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
@@ -70,7 +70,7 @@ pub enum VoltError {
             display("volt execute failed: {:?}", info)
         }
         InvalidColumnType(tp: i8) {
-              display("InvalidColumnType {}", tp)
+            display("InvalidColumnType {}", tp)
         }
 
         NoValue (descr : String) {
@@ -110,6 +110,7 @@ impl<T> From<PoisonError<T>> for VoltError {
 pub trait Value: Debug {
     fn get_write_length(&self) -> i32;
     fn marshal(&self, bytebuffer: &mut ByteBuffer);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8);
     fn to_value_string(&self) -> String;
 }
 
@@ -139,11 +140,15 @@ impl Value for bool {
         bytebuffer.write_bool(*self);
     }
 
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_bool(*self);
+    }
 
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
 }
+
 
 impl Value for BigDecimal {
     fn get_write_length(&self) -> i32 {
@@ -152,7 +157,11 @@ impl Value for BigDecimal {
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
         bytebuffer.write_i8(DECIMAL_COLUMN);
-        let (b, _) = self.clone().into_bigint_and_exponent();
+        self.marshal_in_table(bytebuffer, DECIMAL_COLUMN);
+    }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        let (b, _) = self.clone().with_scale(12).into_bigint_and_exponent();
         let bs = b.to_signed_bytes_be();
         let pad = 16 - bs.len();
         if pad > 0 {
@@ -176,6 +185,12 @@ impl Value for i8 {
         bytebuffer.write_i8(TINYINT_COLUMN);
         bytebuffer.write_i8(*self);
     }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_i8(0);
+        bytebuffer.write_i8(*self);
+    }
+
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
@@ -190,6 +205,12 @@ impl Value for i16 {
         bytebuffer.write_i8(SHORT_COLUMN);
         bytebuffer.write_i16(*self);
     }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_i16(0);
+        bytebuffer.write_i16(*self);
+    }
+
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
@@ -204,6 +225,12 @@ impl Value for i32 {
         bytebuffer.write_i8(INT_COLUMN);
         bytebuffer.write_i32(*self);
     }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_i32(0);
+        bytebuffer.write_i32(*self);
+    }
+
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
@@ -218,6 +245,12 @@ impl Value for i64 {
         bytebuffer.write_i8(LONG_COLUMN);
         bytebuffer.write_i64(*self);
     }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_i64(0);
+        bytebuffer.write_i64(*self);
+    }
+
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
@@ -232,6 +265,11 @@ impl Value for f64 {
         bytebuffer.write_i8(FLOAT_COLUMN);
         bytebuffer.write_f64(*self);
     }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_f64(*self);
+    }
+
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
@@ -248,6 +286,11 @@ impl Value for String {
         // write length , then data
         bytebuffer.write_string(self);
     }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_string(self);
+    }
+
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
@@ -263,6 +306,11 @@ impl Value for &str {
         // write length , then data
         bytebuffer.write_string(self);
     }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_string(self);
+    }
+
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
@@ -279,6 +327,12 @@ impl Value for Vec<u8> {
         bytebuffer.write_u32(self.len() as u32);
         bytebuffer.write_bytes(&self);
     }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_u32(self.len() as u32);
+        bytebuffer.write_bytes(&self);
+    }
+
     fn to_value_string(&self) -> String {
         return format!("{:?}", self);
     }
@@ -295,6 +349,11 @@ impl Value for [u8] {
         bytebuffer.write_bytes(&self);
     }
 
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_u32(self.len() as u32);
+        bytebuffer.write_bytes(&self);
+    }
+
     fn to_value_string(&self) -> String {
         return format!("{:?}", self);
     }
@@ -306,17 +365,24 @@ impl Value for DateTime<Utc> {
     }
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
         bytebuffer.write_i8(TIMESTAMP_COLUMN);
-        bytebuffer.write_i64(self.naive_utc().timestamp_subsec_micros() as i64);
+        bytebuffer.write_i64(self.timestamp_millis() * 1000);
     }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+        bytebuffer.write_i64(self.timestamp_millis() * 1000);
+    }
+
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
 }
 
-
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use bigdecimal::num_bigint::BigInt;
+    use chrono::TimeZone;
 
     use crate::procedure_invocation::new_procedure_invocation;
 
@@ -333,6 +399,12 @@ mod tests {
     }
 
     #[test]
+    fn test_time_stamp() {
+        let time = Utc.timestamp_millis(1637323002445000 / 1000);
+        println!("{}", time.timestamp_millis() * 1000);
+    }
+
+    #[test]
     fn test_big_decimal() {
         let bs: Vec<u8> = vec!(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 90, 243, 16, 122, 64, 0);
         let int = BigInt::from_signed_bytes_be(&*bs);
@@ -340,6 +412,9 @@ mod tests {
         let (b, _) = decimal.into_bigint_and_exponent();
         let b = b.to_signed_bytes_be();
         println!("{:?}", b);
+
+        let decimal = BigDecimal::from_str("1.11").unwrap().with_scale(12);
+        println!("{:?}", decimal.into_bigint_and_exponent());
     }
 
     #[test]
