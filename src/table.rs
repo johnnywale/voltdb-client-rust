@@ -6,7 +6,7 @@ use bigdecimal::num_bigint::BigInt;
 use bytebuffer::ByteBuffer;
 use chrono::{DateTime, TimeZone, Utc};
 
-use crate::encode::{NULL_BIT_VALUE, NULL_DECIMAL, NULL_TIMESTAMP, NULL_VARCHAR, TABLE, Value, VoltError};
+use crate::encode::{*};
 use crate::response::ResponseStatus::Success;
 use crate::response::VoltResponseInfo;
 
@@ -381,11 +381,23 @@ impl VoltTable {
 
     pub fn get_string_by_idx(&mut self, column: i16) -> Result<Option<String>, VoltError> {
         let bs = self.get_bytes_by_idx(column)?;
-        if bs == NULL_VARCHAR {
-            return Ok(Option::None);
+        let tp: i8 = *self.column_types.get(column as usize).unwrap(); // will change type and name into one map
+        if tp == STRING_COLUMN {
+            if bs == NULL_VARCHAR {
+                return Ok(Option::None);
+            }
+            let mut buffer = ByteBuffer::from_bytes(&bs);
+            return Ok(Option::Some(buffer.read_string()?));
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs);
-        return Ok(Option::Some(buffer.read_string()?));
+        let res = self.get_value_by_idx_type(column, tp)?;
+        return match res {
+            Some(v) => {
+                Ok(Option::Some(v.to_value_string()))
+            }
+            None => {
+                Ok(Option::None)
+            }
+        };
     }
 
     pub fn get_time_by_column(&mut self, column: &str) -> Result<Option<DateTime<Utc>>, VoltError> {

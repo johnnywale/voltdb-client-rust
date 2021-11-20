@@ -52,6 +52,11 @@ impl Node {
         return res;
     }
 
+    pub fn list_procedures(&mut self) -> Result<Receiver<VoltTable>, VoltError> {
+        self.call_sp("@SystemCatalog", volt_param!("PROCEDURES"))
+    }
+
+
     pub fn call_sp(&mut self, query: &str, param: Vec<&dyn Value>) -> Result<Receiver<VoltTable>, VoltError> {
         let req = self.get_sequence();
         let mut proc = new_procedure_invocation(
@@ -78,7 +83,7 @@ impl Node {
     pub fn upload_jar(&mut self, bs: Vec<u8>) -> Result<Receiver<VoltTable>, VoltError> {
         self.call_sp("@UpdateClasses", volt_param!(bs,""))
     }
-
+    /// Use `@AdHoc` proc to query .
     pub fn query(&mut self, sql: &str) -> Result<Receiver<VoltTable>, VoltError> {
         let mut zero_vec: Vec<&dyn Value> = Vec::new();
         zero_vec.push(&sql);
@@ -90,6 +95,7 @@ impl Node {
         let mut proc = new_procedure_invocation(PING_HANDLE, false, &zero_vec, "@Ping");
         let bs = proc.bytes();
         self.tcp_stream.write_all(&*bs)?;
+        // TODO add more logic here.
         Ok({})
     }
 
@@ -119,7 +125,7 @@ impl Node {
         }
         Ok({})
     }
-
+    /// Listen on new message come in .
     fn listen(&mut self) -> Result<(), VoltError>
     {
         let requests = Arc::clone(&self.requests);
@@ -147,7 +153,7 @@ pub struct ConnInfo {
     build: String,
 }
 
-
+/// Wait for response, convert response error from volt error to `VoltError`.
 pub fn block_for_result(res: &Receiver<VoltTable>) -> Result<VoltTable, VoltError> {
     let mut table = res.recv()?;
     let err = table.has_error();
@@ -157,6 +163,7 @@ pub fn block_for_result(res: &Receiver<VoltTable>) -> Result<VoltTable, VoltErro
     };
 }
 
+/// Create new connection to server .
 pub fn get_node(addr: &str) -> Result<Node, VoltError> {
     let mut buffer = ByteBuffer::new();
     let result = [1; 1];
