@@ -32,9 +32,13 @@ Here list the data type and rust data type mapping
 [dependencies]
 voltdb-client-rust = { version = "0.1"}
 ```
+Start a voltdb:
+```
+docker run  --env HOST_COUNT=1 --publish 21211:21211 --publish 8080:8080 voltdb/voltdb-community:9.2.1
+```
 Then, on your main.rs:
 
-```rust,no_run
+```rust
 use std::fs;
 use std::time::SystemTime;
 
