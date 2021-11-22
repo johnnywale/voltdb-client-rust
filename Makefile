@@ -21,7 +21,7 @@ prepare_cross_compile:
 	brew install x86_64-unknown-linux-gnu
 
 test:
-	cargo test
+	cargo test --verbose
 
 coverage:
 	cargo kcov
