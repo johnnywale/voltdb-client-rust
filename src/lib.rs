@@ -19,12 +19,7 @@
 //!use std::fs;
 //!use std::time::SystemTime;
 //!
-//! use voltdb_client_rust::encode::*;
-//! use voltdb_client_rust::node::*;
-//! use voltdb_client_rust::table::VoltTable;
 //! use voltdb_client_rust::*;
-//! use voltdb_client_rust::bigdecimal::BigDecimal;
-//! use voltdb_client_rust::chrono::{DateTime, Utc};
 //!
 //! fn main() -> Result<(), VoltError> {
 //!     #[derive(Debug)]
@@ -175,6 +170,7 @@
 #![crate_name = "voltdb_client_rust"]
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
+
 pub mod table;
 pub mod node;
 pub mod encode;
@@ -184,6 +180,12 @@ mod generate;
 
 pub use chrono;
 pub use bigdecimal;
+
+pub use crate::node::{*};
+pub use crate::table::{*};
+pub use crate::encode::{*};
+pub use crate::bigdecimal::BigDecimal;
+pub use crate::chrono::{DateTime, Utc};
 
 #[macro_export]
 macro_rules! volt_param {
