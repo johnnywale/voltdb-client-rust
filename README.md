@@ -42,13 +42,9 @@ Then, on your main.rs:
 use std::fs;
 use std::time::SystemTime;
 
-use bigdecimal::BigDecimal;
-use chrono::{DateTime, Utc};
 
-use voltdb_client_rust::encode::*;
-use voltdb_client_rust::node::*;
-use voltdb_client_rust::table::VoltTable;
-use voltdb_client_rust::volt_param;
+use voltdb_client_rust::*;
+
 
 fn main() -> Result<(), VoltError> {
     #[derive(Debug)]
