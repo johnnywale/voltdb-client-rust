@@ -36,21 +36,7 @@ pub const NULL_TIMESTAMP: [u8; 8] = [128, 0, 0, 0, 0, 0, 0, 0];
 pub const NULL_FLOAT_VALUE: [u8; 8] = [255, 239, 255, 255, 255, 255, 255, 255];
 pub const NULL_VARCHAR: [u8; 4] = [255, 255, 255, 255];
 
-#[macro_export]
-macro_rules! volt_param {
-    () => (
-        std::vec::Vec::new()
-    );
-      ( $( $x:expr ),* ) => {
-        {
-            let mut temp_vec = Vec::new();
-            $(
-                temp_vec.push(&$x as & dyn Value);
-            )*
-            temp_vec
-        }
-    };
-}
+
 quick_error! {
 #[derive(Debug)]
 pub enum VoltError {
