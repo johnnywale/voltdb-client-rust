@@ -1,9 +1,7 @@
 use std::fs;
 use std::time::SystemTime;
 
-
 use voltdb_client_rust::*;
-
 
 fn main() -> Result<(), VoltError> {
     #[derive(Debug)]
@@ -22,15 +20,15 @@ fn main() -> Result<(), VoltError> {
     impl From<&mut VoltTable> for Test {
         fn from(table: &mut VoltTable) -> Self {
             Test {
-                t1: table.get_i8_by_column("T1").unwrap(),
-                t2: table.get_i16_by_column("t2").unwrap(),
-                t3: table.get_i32_by_column("t3").unwrap(),
-                t4: table.get_i64_by_column("t4").unwrap(),
-                t5: table.get_f64_by_column("t5").unwrap(),
-                t6: table.get_decimal_by_column("t6").unwrap(),
-                t7: table.get_string_by_column("t7").unwrap(),
-                t8: table.get_bytes_op_by_column("t8").unwrap(),
-                t9: table.get_time_by_column("t9").unwrap(),
+                t1: table.fetch("T1").unwrap(),
+                t2: table.fetch("t2").unwrap(),
+                t3: table.fetch("t3").unwrap(),
+                t4: table.fetch("t4").unwrap(),
+                t5: table.fetch("t5").unwrap(),
+                t6: table.fetch("t6").unwrap(),
+                t7: table.fetch("t7").unwrap(),
+                t8: table.fetch("t8").unwrap(),
+                t9: table.fetch("t9").unwrap(),
             }
         }
     }
