@@ -1,15 +1,22 @@
 extern crate lazy_static;
 
-use std::{fs, panic};
-use std::sync::Once;
+use std::{fs, panic, thread};
+use std::sync::{Once, Arc, Mutex};
 
 
 use lazy_static::lazy_static;
 use testcontainers::{*};
 use testcontainers::clients::Cli;
 use testcontainers::images::generic::{GenericImage, Stream, WaitFor};
+use std::ptr::{self, null_mut};
 
 use voltdb_client_rust::*;
+use std::thread::JoinHandle;
+use std::rc::Rc;
+use std::sync::atomic::{AtomicPtr, Ordering};
+use std::ops::{DerefMut, Deref};
+use std::sync::atomic::Ordering::Acquire;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 
 lazy_static! {
@@ -122,7 +129,6 @@ fn table_column_test() -> Result<(), VoltError> {
             }
         }
     }
-
     let url = init();
     let mut node = get_node(url.as_str()).unwrap();
     populate(&mut node);
@@ -146,5 +152,28 @@ fn table_column_test() -> Result<(), VoltError> {
     assert_eq!(test.t5, Some(5 as f64));
     assert_eq!(test.t6, Some(BigDecimal::from(6)));
     assert_eq!(test.t7, Some("7".to_owned()));
+    let rc = Arc::new(AtomicPtr::new(&mut node));
+    let mut vec: Vec<JoinHandle<_>> = vec![];
+    let start = SystemTime::now();
+    for i in 0..512 {
+        let mut local = Arc::clone(&rc);
+        let handle = thread::spawn(move || unsafe {
+            let load = local.load(Acquire);
+            let res = &(*load).query("select * from test_types where t1 = 1;").unwrap();
+            let mut table = block_for_result(&res).unwrap();
+            table.advance_row();
+            let test: Test = table.map_row();
+        }
+        );
+        vec.push(handle);
+    }
+    for handle in vec {
+        handle.join().unwrap();
+    }
+    let since_the_epoch = SystemTime::now()
+        .duration_since(start)
+        .expect("Time went backwards");
+    println!("{:?}", since_the_epoch);
+    node.shutdown()?;
     Ok(())
 }

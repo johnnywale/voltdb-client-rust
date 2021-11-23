@@ -24,7 +24,6 @@ pub struct VoltTable {
     column_count: i16,
     info_bytes: ByteBuffer,
     column_info_bytes: ByteBuffer,
-    //    column_types: Vec<i8>,
     columns: Vec<Column>,
     num_rows: i32,
     rows: Vec<ByteBuffer>,

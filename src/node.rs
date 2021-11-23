@@ -17,6 +17,7 @@ use crate::response::VoltResponseInfo;
 use crate::table::{new_volt_table, VoltTable};
 use crate::volt_param;
 
+
 const PING_HANDLE: i64 = 1 << 63 - 1;
 
 
@@ -33,12 +34,13 @@ pub trait Connection: Sync + Send + 'static {}
 
 #[allow(dead_code)]
 pub struct Node {
-    tcp_stream: TcpStream,
+    tcp_stream: Box<Option<TcpStream>>,
     info: ConnInfo,
     requests: Arc<RwLock<HashMap<i64, NetworkRequest>>>,
     stop: Arc<Mutex<bool>>,
     counter: Mutex<AtomicI64>,
 }
+
 
 impl Connection for Node {}
 
@@ -52,6 +54,10 @@ impl Node {
         *seq.get_mut() = res;
         return res;
     }
+
+    // pub fn as_mut(&mut self) -> &mut Conn {
+    //     self.conn.as_mut().unwrap()
+    // }
 
     pub fn list_procedures(&mut self) -> Result<Receiver<VoltTable>, VoltError> {
         self.call_sp("@SystemCatalog", volt_param!("PROCEDURES"))
@@ -76,8 +82,13 @@ impl Node {
         };
         self.requests.write()?.insert(req, seq);
         let bs = proc.bytes();
-        self.tcp_stream.write_all(&*bs)?;
-        self.tcp_stream.flush()?;
+        let tcp_stream = self.tcp_stream.as_mut();
+        match tcp_stream {
+            None => {}
+            Some(stream) => {
+                stream.write_all(&*bs)?;
+            }
+        }
         return Ok(rx);
     }
 
@@ -95,8 +106,13 @@ impl Node {
         let zero_vec: Vec<&dyn Value> = Vec::new();
         let mut proc = new_procedure_invocation(PING_HANDLE, false, &zero_vec, "@Ping");
         let bs = proc.bytes();
-        self.tcp_stream.write_all(&*bs)?;
-        // TODO add more logic here.
+        let res = self.tcp_stream.as_mut();
+        match res {
+            None => {}
+            Some(stream) => {
+                stream.write_all(&*bs)?;
+            }
+        }
         Ok({})
     }
 
@@ -131,33 +147,49 @@ impl Node {
     pub fn shutdown(&mut self) -> Result<(), VoltError> {
         let mut stop = self.stop.lock().unwrap();
         *stop = true;
-        self.tcp_stream.shutdown(Shutdown::Both)?;
+        let res = self.tcp_stream.as_mut();
+        match res {
+            None => {}
+            Some(stream) => {
+                stream.shutdown(Shutdown::Both)?;
+            }
+        }
+        self.tcp_stream = Box::new(Option::None);
         return Ok({});
     }
     /// Listen on new message come in .
     fn listen(&mut self) -> Result<(), VoltError>
     {
         let requests = Arc::clone(&self.requests);
-        let tcp = self.tcp_stream.try_clone()?;
-        let stopping = Arc::clone(&self.stop);
-        thread::spawn(move || {
-            loop {
-                if *stopping.lock().unwrap() {
-                    break;
-                } else {
-                    let res = crate::node::Node::job(&tcp, &requests);
-                    match res {
-                        Ok(_) => {}
-                        Err(err) => {
-                            if !*stopping.lock().unwrap() {
-                                eprintln!("{} ", err)
+
+        let res = self.tcp_stream.as_mut();
+        return match res {
+            None => {
+                Ok(())
+            }
+            Some(res) => {
+                let tcp = res.try_clone()?;
+                let stopping = Arc::clone(&self.stop);
+                thread::spawn(move || {
+                    loop {
+                        if *stopping.lock().unwrap() {
+                            break;
+                        } else {
+                            let res = crate::node::Node::job(&tcp, &requests);
+                            match res {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    if !*stopping.lock().unwrap() {
+                                        eprintln!("{} ", err)
+                                    }
+                                }
                             }
                         }
                     }
-                }
+                });
+                Ok(())
             }
-        });
-        Ok(())
+        };
     }
 }
 
@@ -227,7 +259,7 @@ pub fn get_node(addr: &str) -> Result<Node, VoltError> {
     let data = Arc::new(RwLock::new(HashMap::new()));
     let mut res = Node {
         stop: Arc::new(Mutex::new(false)),
-        tcp_stream: stream,
+        tcp_stream: Box::new(Option::Some(stream)),
         info,
         requests: data,
         counter: Mutex::new(AtomicI64::new(1)),
