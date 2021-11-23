@@ -3,6 +3,7 @@ use std::time::SystemTime;
 
 use voltdb_client_rust::*;
 
+
 fn main() -> Result<(), VoltError> {
     #[derive(Debug)]
     struct Test {
@@ -143,5 +144,8 @@ fn main() -> Result<(), VoltError> {
     while res.advance_row() {
         println!("{:?}", res.debug_row());
     }
+    node.shutdown()?;
+
+
     Ok({})
 }
