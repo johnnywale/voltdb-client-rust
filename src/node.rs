@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, TcpStream};
+use std::net::{Ipv4Addr, TcpStream, Shutdown};
 use std::str::from_utf8;
 use std::sync::{Arc, mpsc, Mutex, RwLock};
 use std::sync::atomic::{AtomicI64, Ordering};
@@ -33,9 +33,10 @@ pub trait Connection: Sync + Send + 'static {}
 
 #[allow(dead_code)]
 pub struct Node {
-    tcp_stream: Box<TcpStream>,
+    tcp_stream: TcpStream,
     info: ConnInfo,
     requests: Arc<RwLock<HashMap<i64, NetworkRequest>>>,
+    stop: Arc<Mutex<bool>>,
     counter: Mutex<AtomicI64>,
 }
 
@@ -121,22 +122,37 @@ impl Node {
                     }
                 }
             }
-            Err(_) => {}
+            Err(e) => {
+                return Err(VoltError::Io(e));
+            }
         }
         Ok({})
+    }
+    pub fn shutdown(&mut self) -> Result<(), VoltError> {
+        let mut stop = self.stop.lock().unwrap();
+        *stop = true;
+        self.tcp_stream.shutdown(Shutdown::Both)?;
+        return Ok({});
     }
     /// Listen on new message come in .
     fn listen(&mut self) -> Result<(), VoltError>
     {
         let requests = Arc::clone(&self.requests);
         let tcp = self.tcp_stream.try_clone()?;
+        let stopping = Arc::clone(&self.stop);
         thread::spawn(move || {
             loop {
-                let res = crate::node::Node::job(&tcp, &requests);
-                match res {
-                    Ok(_) => {}
-                    Err(err) => {
-                        eprintln!("{} ", err)
+                if *stopping.lock().unwrap() {
+                    break;
+                } else {
+                    let res = crate::node::Node::job(&tcp, &requests);
+                    match res {
+                        Ok(_) => {}
+                        Err(err) => {
+                            if !*stopping.lock().unwrap() {
+                                eprintln!("{} ", err)
+                            }
+                        }
                     }
                 }
             }
@@ -210,7 +226,8 @@ pub fn get_node(addr: &str) -> Result<Node, VoltError> {
     };
     let data = Arc::new(RwLock::new(HashMap::new()));
     let mut res = Node {
-        tcp_stream: Box::new(stream),
+        stop: Arc::new(Mutex::new(false)),
+        tcp_stream: stream,
         info,
         requests: data,
         counter: Mutex::new(AtomicI64::new(1)),
