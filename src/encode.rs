@@ -90,6 +90,10 @@ pub enum VoltError {
         ConnectionNotAvailable {
              display("Connection lost")
         }
+       InvalidConfig {
+             display("Invalid Config")
+        }
+        Timeout
 
 
 }}

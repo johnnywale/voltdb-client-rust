@@ -1,50 +1,25 @@
 extern crate lazy_static;
 
 use std::{fs, panic, thread};
-use std::sync::{Once, Arc, Mutex};
-
+use std::borrow::BorrowMut;
+use std::ops::{Deref, DerefMut};
+use std::ptr::{self, null_mut};
+use std::rc::Rc;
+use std::sync::{Arc, Mutex, Once};
+use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::atomic::Ordering::Acquire;
+use std::thread::JoinHandle;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use lazy_static::lazy_static;
 use testcontainers::{*};
 use testcontainers::clients::Cli;
 use testcontainers::images::generic::{GenericImage, Stream, WaitFor};
-use std::ptr::{self, null_mut};
 
 use voltdb_client_rust::*;
-use std::thread::JoinHandle;
-use std::rc::Rc;
-use std::sync::atomic::{AtomicPtr, Ordering};
-use std::ops::{DerefMut, Deref};
-use std::sync::atomic::Ordering::Acquire;
-use std::time::{SystemTime, UNIX_EPOCH};
 
-
-lazy_static! {
-    static ref CLI: Cli = {
-        clients::Cli::default()
-    };
-     static ref DOCKER: Container<'static, Cli, GenericImage> = {
-            let wait = WaitFor::LogMessage { message: "Server completed initialization.".to_owned(), stream: Stream::StdOut };
-            let voltdb = GenericImage::new("voltdb/voltdb-community:9.2.1")
-                .with_env_var("HOST_COUNT", "1")
-                .with_wait_for(wait);
-            CLI.run(voltdb)
-    };
-}
-
-static mut VAL: String = String::new();
-static INIT: Once = Once::new();
 static POPULATE: Once = Once::new();
 
-fn init() -> String {
-    unsafe {
-        INIT.call_once(|| {
-            let host_port = DOCKER.get_host_port(21211);
-            VAL = String::from(format!("localhost:{}", host_port.unwrap()).to_owned());
-        });
-        return VAL.clone();
-    }
-}
 
 fn populate(node: &mut Node) {
     POPULATE.call_once(|| {
@@ -73,13 +48,6 @@ fn populate(node: &mut Node) {
     });
 }
 
-#[test]
-fn jar_upload() -> Result<(), VoltError> {
-    let url = init();
-    let mut node = get_node(url.as_str()).unwrap();
-    populate(&mut node);
-    Ok(())
-}
 
 fn execute_success(node: &mut Node, sql: &str) {
     let x = node.query(sql).unwrap();
@@ -92,7 +60,17 @@ fn execute_success(node: &mut Node, sql: &str) {
 
 
 #[test]
-fn table_column_test() -> Result<(), VoltError> {
+fn test_multiples_thread() -> Result<(), VoltError> {
+    let c = Cli::default();
+    let wait = WaitFor::LogMessage { message: "Server completed initialization.".to_owned(), stream: Stream::StdOut };
+    let voltdb = GenericImage::new("voltdb/voltdb-community:9.2.1")
+        .with_env_var("HOST_COUNT", "1")
+        .with_wait_for(wait);
+    let docker = c.run(voltdb);
+    let host_port = docker.get_host_port(21211);
+
+
+
     #[derive(Debug)]
     struct Test {
         t1: Option<bool>,
@@ -129,8 +107,9 @@ fn table_column_test() -> Result<(), VoltError> {
             }
         }
     }
-    let url = init();
-    let mut node = get_node(url.as_str()).unwrap();
+    let url = "localhost";
+    let port = host_port.unwrap();
+    let mut node = get_node(&*format!("{}:{}", url, port)).unwrap();
     populate(&mut node);
     let insert = "insert into test_types (T1) values (NULL);";
     execute_success(&mut node, insert);

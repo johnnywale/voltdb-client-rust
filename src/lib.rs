@@ -177,6 +177,7 @@ pub mod encode;
 mod procedure_invocation;
 mod response;
 mod generate;
+mod pool;
 
 pub use chrono;
 pub use bigdecimal;
@@ -184,6 +185,7 @@ pub use bigdecimal;
 pub use crate::node::{*};
 pub use crate::table::{*};
 pub use crate::encode::{*};
+pub use crate::pool::{*};
 pub use crate::bigdecimal::BigDecimal;
 pub use crate::chrono::{DateTime, Utc};
 
