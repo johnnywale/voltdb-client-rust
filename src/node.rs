@@ -41,6 +41,18 @@ pub struct Node {
     counter: Mutex<AtomicI64>,
 }
 
+impl Drop for Node {
+    fn drop(&mut self) {
+        let res = self.shutdown();
+        match res {
+            Ok(_) => {}
+            Err(e) => {
+                eprintln!("{:?}", e);
+            }
+        }
+    }
+}
+
 
 impl Connection for Node {}
 
@@ -54,10 +66,6 @@ impl Node {
         *seq.get_mut() = res;
         return res;
     }
-
-    // pub fn as_mut(&mut self) -> &mut Conn {
-    //     self.conn.as_mut().unwrap()
-    // }
 
     pub fn list_procedures(&mut self) -> Result<Receiver<VoltTable>, VoltError> {
         self.call_sp("@SystemCatalog", volt_param!("PROCEDURES"))
@@ -84,7 +92,9 @@ impl Node {
         let bs = proc.bytes();
         let tcp_stream = self.tcp_stream.as_mut();
         match tcp_stream {
-            None => {}
+            None => {
+                return Err(VoltError::ConnectionNotAvailable);
+            }
             Some(stream) => {
                 stream.write_all(&*bs)?;
             }
@@ -108,7 +118,9 @@ impl Node {
         let bs = proc.bytes();
         let res = self.tcp_stream.as_mut();
         match res {
-            None => {}
+            None => {
+                return Err(VoltError::ConnectionNotAvailable);
+            }
             Some(stream) => {
                 stream.write_all(&*bs)?;
             }

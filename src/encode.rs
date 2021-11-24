@@ -84,7 +84,12 @@ pub enum VoltError {
         BadReturnStatusOnTable (status: i8) {
              display("Error {}", status)
         }
-        AuthFailed
+        AuthFailed {
+             display("Auth failed")
+        }
+        ConnectionNotAvailable {
+             display("Connection lost")
+        }
 
 
 }}
@@ -183,10 +188,6 @@ impl Value for BigDecimal {
         let decimal = BigDecimal::new(int, 12);
         return Ok(Some(decimal));
     }
-
-    // fn from_bytes(bs: Vec<u8>) -> Option<Self> {
-
-    // }
 }
 
 impl Value for i8 {
