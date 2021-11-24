@@ -1,17 +1,12 @@
 extern crate lazy_static;
 
 use std::{fs, panic, thread};
-use std::borrow::BorrowMut;
-use std::ops::{Deref, DerefMut};
-use std::ptr::{self, null_mut};
-use std::rc::Rc;
-use std::sync::{Arc, Mutex, Once};
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::{*};
+use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering::Acquire;
 use std::thread::JoinHandle;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::SystemTime;
 
-use lazy_static::lazy_static;
 use testcontainers::{*};
 use testcontainers::clients::Cli;
 use testcontainers::images::generic::{GenericImage, Stream, WaitFor};
@@ -134,14 +129,14 @@ fn test_multiples_thread() -> Result<(), VoltError> {
     let rc = Arc::new(AtomicPtr::new(&mut node));
     let mut vec: Vec<JoinHandle<_>> = vec![];
     let start = SystemTime::now();
-    for i in 0..512 {
-        let mut local = Arc::clone(&rc);
+    for _ in 0..512 {
+        let local = Arc::clone(&rc);
         let handle = thread::spawn(move || unsafe {
             let load = local.load(Acquire);
             let res = &(*load).query("select * from test_types where t1 = 1;").unwrap();
             let mut table = block_for_result(&res).unwrap();
             table.advance_row();
-            let test: Test = table.map_row();
+            let _: Test = table.map_row();
         }
         );
         vec.push(handle);
