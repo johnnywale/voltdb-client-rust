@@ -1,6 +1,7 @@
-use crate::table::VoltTable;
-use crate::encode::{NULL_BYTE_VALUE, VoltError, NULL_SHORT_VALUE, NULL_INT_VALUE, NULL_LONG_VALUE, NULL_FLOAT_VALUE};
 use bytebuffer::ByteBuffer;
+
+use crate::encode::{*};
+use crate::table::VoltTable;
 
 impl VoltTable {
     pub fn get_i8_by_column(&mut self, column: &str) -> Result<Option<i8>, VoltError> {
@@ -10,10 +11,10 @@ impl VoltTable {
 
     pub fn get_i8_by_idx(&mut self, column: i16) -> Result<Option<i8>, VoltError> {
         let bs = self.get_bytes_by_idx(column)?;
-        if bs == NULL_BYTE_VALUE {
+        if bs == NULL_BIT_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs[1..]);
+        let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i8()?;
         return Ok(Some(value));
     }
@@ -26,10 +27,10 @@ impl VoltTable {
 
     pub fn get_u8_by_idx(&mut self, column: i16) -> Result<Option<u8>, VoltError> {
         let bs = self.get_bytes_by_idx(column)?;
-        if bs == NULL_BYTE_VALUE {
+        if bs == NULL_BIT_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs[1..]);
+        let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u8()?;
         return Ok(Some(value));
     }
@@ -45,7 +46,7 @@ impl VoltTable {
         if bs == NULL_SHORT_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs[2..]);
+        let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i16()?;
         return Ok(Some(value));
     }
@@ -61,7 +62,7 @@ impl VoltTable {
         if bs == NULL_SHORT_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs[2..]);
+        let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u16()?;
         return Ok(Some(value));
     }
@@ -77,7 +78,7 @@ impl VoltTable {
         if bs == NULL_INT_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs[4..]);
+        let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i32()?;
         return Ok(Some(value));
     }
@@ -93,7 +94,7 @@ impl VoltTable {
         if bs == NULL_INT_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs[4..]);
+        let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u32()?;
         return Ok(Some(value));
     }
@@ -109,7 +110,7 @@ impl VoltTable {
         if bs == NULL_LONG_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs[8..]);
+        let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i64()?;
         return Ok(Some(value));
     }
@@ -125,7 +126,7 @@ impl VoltTable {
         if bs == NULL_LONG_VALUE {
             return Ok(Option::None);
         }
-        let mut buffer = ByteBuffer::from_bytes(&bs[8..]);
+        let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u64()?;
         return Ok(Some(value));
     }

@@ -21,10 +21,13 @@ prepare_cross_compile:
 	brew install x86_64-unknown-linux-gnu
 
 test:
-	cargo test
+	cargo test --verbose
 
 coverage:
 	cargo kcov
+
+check:
+	cargo check
 
 docker-run:
 	docker run  --env HOST_COUNT=1 --publish 21211:21211 --publish 8080:8080 voltdb/voltdb-community:9.2.1

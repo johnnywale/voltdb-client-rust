@@ -1,12 +1,15 @@
-use std::fmt::Debug;
+use std::fmt::{Debug};
 use std::str::Utf8Error;
 use std::sync::PoisonError;
 
 use bigdecimal::BigDecimal;
+use bigdecimal::num_bigint::BigInt;
 use bytebuffer::ByteBuffer;
 use chrono::{DateTime, Utc};
 use quick_error::quick_error;
 
+use crate::chrono::TimeZone;
+use crate::Column;
 use crate::response::VoltResponseInfo;
 
 #[allow(dead_code)]
@@ -25,32 +28,18 @@ pub const VAR_BIN_COLUMN: i8 = 25; // varbinary (int)(bytes)
 
 
 pub const NULL_DECIMAL: [u8; 16] = [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
 pub const NULL_BIT_VALUE: [u8; 1] = [128];
-pub const NULL_BYTE_VALUE: [u8; 2] = [128, 0];
-pub const NULL_SHORT_VALUE: [u8; 4] = [128, 0, 0, 0];
-pub const NULL_INT_VALUE: [u8; 8] = [128, 0, 0, 0, 0, 0, 0, 0];
-pub const NULL_LONG_VALUE: [u8; 16] = [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+pub const NULL_SHORT_VALUE: [u8; 2] = [128, 0];
+pub const NULL_INT_VALUE: [u8; 4] = [128, 0, 0, 0];
+pub const NULL_LONG_VALUE: [u8; 8] = [128, 0, 0, 0, 0, 0, 0, 0];
 pub const NULL_TIMESTAMP: [u8; 8] = [128, 0, 0, 0, 0, 0, 0, 0];
 
 
 pub const NULL_FLOAT_VALUE: [u8; 8] = [255, 239, 255, 255, 255, 255, 255, 255];
 pub const NULL_VARCHAR: [u8; 4] = [255, 255, 255, 255];
 
-#[macro_export]
-macro_rules! volt_param {
-    () => (
-        std::vec::Vec::new()
-    );
-      ( $( $x:expr ),* ) => {
-        {
-            let mut temp_vec = Vec::new();
-            $(
-                temp_vec.push(&$x as & dyn Value);
-            )*
-            temp_vec
-        }
-    };
-}
+
 quick_error! {
 #[derive(Debug)]
 pub enum VoltError {
@@ -95,7 +84,16 @@ pub enum VoltError {
         BadReturnStatusOnTable (status: i8) {
              display("Error {}", status)
         }
-        AuthFailed
+        AuthFailed {
+             display("Auth failed")
+        }
+        ConnectionNotAvailable {
+             display("Connection lost")
+        }
+       InvalidConfig {
+             display("Invalid Config")
+        }
+        Timeout
 
 
 }}
@@ -106,12 +104,15 @@ impl<T> From<PoisonError<T>> for VoltError {
     }
 }
 
+pub trait ValuePrimary {}
+
 //pub trait
 pub trait Value: Debug {
     fn get_write_length(&self) -> i32;
     fn marshal(&self, bytebuffer: &mut ByteBuffer);
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8);
     fn to_value_string(&self) -> String;
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized;
 }
 
 
@@ -140,12 +141,19 @@ impl Value for bool {
         bytebuffer.write_bool(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_bool(*self);
     }
 
     fn to_value_string(&self) -> String {
         return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs[0] == 0 {
+            return Ok(false);
+        }
+        return Ok(true);
     }
 }
 
@@ -160,7 +168,7 @@ impl Value for BigDecimal {
         self.marshal_in_table(bytebuffer, DECIMAL_COLUMN);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         let (b, _) = self.clone().with_scale(12).into_bigint_and_exponent();
         let bs = b.to_signed_bytes_be();
         let pad = 16 - bs.len();
@@ -174,6 +182,12 @@ impl Value for BigDecimal {
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized {
+        let int = BigInt::from_signed_bytes_be(&*bs);
+        let decimal = BigDecimal::new(int, 12);
+        return Ok(decimal);
+    }
 }
 
 impl Value for i8 {
@@ -186,13 +200,45 @@ impl Value for i8 {
         bytebuffer.write_i8(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
-        bytebuffer.write_i8(0);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+        //   bytebuffer.write_i8(0);
         bytebuffer.write_i8(*self);
     }
 
     fn to_value_string(&self) -> String {
         return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let value = buffer.read_i8()?;
+        return Ok(value);
+    }
+}
+
+impl Value for u8 {
+    fn get_write_length(&self) -> i32 {
+        return 2;
+    }
+
+    fn marshal(&self, bytebuffer: &mut ByteBuffer) {
+        bytebuffer.write_i8(TINYINT_COLUMN);
+        bytebuffer.write_u8(*self);
+    }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+        //  bytebuffer.write_u8(0);
+        bytebuffer.write_u8(*self);
+    }
+
+    fn to_value_string(&self) -> String {
+        return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let value = buffer.read_u8()?;
+        return Ok(value);
     }
 }
 
@@ -206,13 +252,45 @@ impl Value for i16 {
         bytebuffer.write_i16(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
-        bytebuffer.write_i16(0);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+        //    bytebuffer.write_i16(0);
         bytebuffer.write_i16(*self);
     }
 
     fn to_value_string(&self) -> String {
         return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let value = buffer.read_i16()?;
+        return Ok(value);
+    }
+}
+
+impl Value for u16 {
+    fn get_write_length(&self) -> i32 {
+        return 3;
+    }
+
+    fn marshal(&self, bytebuffer: &mut ByteBuffer) {
+        bytebuffer.write_i8(SHORT_COLUMN);
+        bytebuffer.write_u16(*self);
+    }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+        //  bytebuffer.write_i16(0);
+        bytebuffer.write_u16(*self);
+    }
+
+    fn to_value_string(&self) -> String {
+        return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let value = buffer.read_u16()?;
+        return Ok(value);
     }
 }
 
@@ -226,13 +304,45 @@ impl Value for i32 {
         bytebuffer.write_i32(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
-        bytebuffer.write_i32(0);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+        //   bytebuffer.write_i32(0);
         bytebuffer.write_i32(*self);
     }
 
     fn to_value_string(&self) -> String {
         return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let value = buffer.read_i32()?;
+        return Ok(value);
+    }
+}
+
+impl Value for u32 {
+    fn get_write_length(&self) -> i32 {
+        return 5;
+    }
+
+    fn marshal(&self, bytebuffer: &mut ByteBuffer) {
+        bytebuffer.write_i8(INT_COLUMN);
+        bytebuffer.write_u32(*self);
+    }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+        //   bytebuffer.write_u32(0);
+        bytebuffer.write_u32(*self);
+    }
+
+    fn to_value_string(&self) -> String {
+        return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let value = buffer.read_u32()?;
+        return Ok(value);
     }
 }
 
@@ -246,13 +356,45 @@ impl Value for i64 {
         bytebuffer.write_i64(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
-        bytebuffer.write_i64(0);
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+        //   bytebuffer.write_i64(0);
         bytebuffer.write_i64(*self);
     }
 
     fn to_value_string(&self) -> String {
         return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let value = buffer.read_i64()?;
+        return Ok(value);
+    }
+}
+
+impl Value for u64 {
+    fn get_write_length(&self) -> i32 {
+        return 9;
+    }
+
+    fn marshal(&self, bytebuffer: &mut ByteBuffer) {
+        bytebuffer.write_i8(LONG_COLUMN);
+        bytebuffer.write_u64(*self);
+    }
+
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
+        // bytebuffer.write_u64(0);
+        bytebuffer.write_u64(*self);
+    }
+
+    fn to_value_string(&self) -> String {
+        return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let value = buffer.read_u64()?;
+        return Ok(value);
     }
 }
 
@@ -266,12 +408,18 @@ impl Value for f64 {
         bytebuffer.write_f64(*self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_f64(*self);
     }
 
     fn to_value_string(&self) -> String {
         return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let value = buffer.read_f64()?;
+        return Ok(value);
     }
 }
 
@@ -283,16 +431,38 @@ impl Value for String {
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
         bytebuffer.write_i8(STRING_COLUMN);
-        // write length , then data
         bytebuffer.write_string(self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_string(self);
     }
 
     fn to_value_string(&self) -> String {
         return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, table_column: &Column) -> Result<Self, VoltError> {
+        return match table_column.header_type {
+            STRING_COLUMN => {
+                // if bs == NULL_VARCHAR {
+                //     return Ok(Option::None);
+                // }
+                let mut buffer = ByteBuffer::from_bytes(&bs);
+                Ok(buffer.read_string()?)
+            }
+            _ => {
+                let res = crate::table::VoltTable::get_value_by_idx_column(table_column, bs)?;
+                match res {
+                    Some(v) => {
+                        Ok(v.to_value_string())
+                    }
+                    None => {
+                        Ok("".to_string())
+                    }
+                }
+            }
+        };
     }
 }
 
@@ -307,15 +477,18 @@ impl Value for &str {
         bytebuffer.write_string(self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_string(self);
     }
 
     fn to_value_string(&self) -> String {
         return self.to_string();
     }
-}
 
+    fn from_bytes(_bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        todo!()
+    }
+}
 
 impl Value for Vec<u8> {
     fn get_write_length(&self) -> i32 {
@@ -328,7 +501,7 @@ impl Value for Vec<u8> {
         bytebuffer.write_bytes(&self);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_u32(self.len() as u32);
         bytebuffer.write_bytes(&self);
     }
@@ -336,28 +509,14 @@ impl Value for Vec<u8> {
     fn to_value_string(&self) -> String {
         return format!("{:?}", self);
     }
-}
 
-impl Value for [u8] {
-    fn get_write_length(&self) -> i32 {
-        return (5 + self.len()) as i32;
-    }
-
-    fn marshal(&self, bytebuffer: &mut ByteBuffer) {
-        bytebuffer.write_i8(VAR_BIN_COLUMN);
-        bytebuffer.write_u32(self.len() as u32);
-        bytebuffer.write_bytes(&self);
-    }
-
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
-        bytebuffer.write_u32(self.len() as u32);
-        bytebuffer.write_bytes(&self);
-    }
-
-    fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        let mut cp = bs.clone();
+        cp.drain(0..4);
+        return Ok(cp);
     }
 }
+
 
 impl Value for DateTime<Utc> {
     fn get_write_length(&self) -> i32 {
@@ -368,12 +527,18 @@ impl Value for DateTime<Utc> {
         bytebuffer.write_i64(self.timestamp_millis() * 1000);
     }
 
-    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, column_type: i8) {
+    fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
         bytebuffer.write_i64(self.timestamp_millis() * 1000);
     }
 
     fn to_value_string(&self) -> String {
         return self.to_string();
+    }
+
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized {
+        let mut buffer = ByteBuffer::from_bytes(&bs);
+        let time = buffer.read_i64()?;
+        return Ok(Utc.timestamp_millis(time / 1000));
     }
 }
 
@@ -419,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_big_test_bytes() {
-        let i = ByteBuffer::from_bytes(&NULL_BYTE_VALUE).read_i8().unwrap();
+        let i = ByteBuffer::from_bytes(&NULL_BIT_VALUE).read_i8().unwrap();
         assert_eq!(i, -128);
         let i = ByteBuffer::from_bytes(&NULL_SHORT_VALUE).read_i16().unwrap();
         assert_eq!(i, -32768);
@@ -441,14 +606,14 @@ mod tests {
         println!("{:?} {} ", err, err);
     }
 
-    #[test]
-    fn test_vec() {
-        let xs: [u8; 5] = [1, 2, 3, 4, 5];
-        println!("{}", xs.get_write_length());
-        let mut ve = Vec::new();
-        ve.push(1 as u8);
-        ve.push(10 as u8);
-        println!("{}", &ve.get_write_length());
-    }
+    // #[test]
+    // fn test_vec() {
+    //     let xs: [u8; 5] = [1, 2, 3, 4, 5];
+    //     println!("{}", xs.get_write_length());
+    //     let mut ve = Vec::new();
+    //     ve.push(1 as u8);
+    //     ve.push(10 as u8);
+    //     println!("{}", &ve.get_write_length());
+    // }
 }
 

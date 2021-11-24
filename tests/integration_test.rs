@@ -1,45 +1,20 @@
 extern crate lazy_static;
 
-use std::{fs, panic};
-use std::sync::Once;
+use std::{fs, panic, thread};
+use std::sync::{*};
+use std::sync::atomic::AtomicPtr;
+use std::sync::atomic::Ordering::Acquire;
+use std::thread::JoinHandle;
+use std::time::SystemTime;
 
-use bigdecimal::BigDecimal;
-use chrono::{DateTime, Utc};
-use lazy_static::lazy_static;
 use testcontainers::{*};
 use testcontainers::clients::Cli;
 use testcontainers::images::generic::{GenericImage, Stream, WaitFor};
 
-use voltdb_client_rust::encode::{*};
-use voltdb_client_rust::node::*;
-use voltdb_client_rust::table::VoltTable;
+use voltdb_client_rust::*;
 
-lazy_static! {
-    static ref CLI: Cli = {
-        clients::Cli::default()
-    };
-     static ref DOCKER: Container<'static, Cli, GenericImage> = {
-            let wait = WaitFor::LogMessage { message: "Server completed initialization.".to_owned(), stream: Stream::StdOut };
-            let voltdb = GenericImage::new("voltdb/voltdb-community:9.2.1")
-                .with_env_var("HOST_COUNT", "1")
-                .with_wait_for(wait);
-            CLI.run(voltdb)
-    };
-}
-
-static mut VAL: String = String::new();
-static INIT: Once = Once::new();
 static POPULATE: Once = Once::new();
 
-fn init() -> String {
-    unsafe {
-        INIT.call_once(|| {
-            let host_port = DOCKER.get_host_port(21211);
-            VAL = String::from(format!("localhost:{}", host_port.unwrap()).to_owned());
-        });
-        return VAL.clone();
-    }
-}
 
 fn populate(node: &mut Node) {
     POPULATE.call_once(|| {
@@ -61,24 +36,13 @@ fn populate(node: &mut Node) {
                     t9 TIMESTAMP,
                     );";
         execute_success(node, create);
-
-        let script = "CREATE PROCEDURE
-PARTITION ON TABLE ACCOUNT_IP COLUMN ACCOUNT_ID
-FROM CLASS com.johnny.ApplicationCreate;
--- execute the batch of DDL statements";
+        let script = "CREATE PROCEDURE  FROM CLASS com.johnny.ApplicationCreate;";
         let x = node.query(script).unwrap();
         let mut table = x.recv().unwrap();
         assert!(table.has_error().is_none());
     });
 }
 
-#[test]
-fn jar_upload() -> Result<(), VoltError> {
-    let url = init();
-    let mut node = get_node(url.as_str()).unwrap();
-    populate(&mut node);
-    Ok(())
-}
 
 fn execute_success(node: &mut Node, sql: &str) {
     let x = node.query(sql).unwrap();
@@ -91,13 +55,23 @@ fn execute_success(node: &mut Node, sql: &str) {
 
 
 #[test]
-fn table_column_test() -> Result<(), VoltError> {
+fn test_multiples_thread() -> Result<(), VoltError> {
+    let c = Cli::default();
+    let wait = WaitFor::LogMessage { message: "Server completed initialization.".to_owned(), stream: Stream::StdOut };
+    let voltdb = GenericImage::new("voltdb/voltdb-community:9.2.1")
+        .with_env_var("HOST_COUNT", "1")
+        .with_wait_for(wait);
+    let docker = c.run(voltdb);
+    let host_port = docker.get_host_port(21211);
+
+
+
     #[derive(Debug)]
     struct Test {
         t1: Option<bool>,
-        t2: Option<i8>,
-        t3: Option<i16>,
-        t4: Option<i32>,
+        t2: Option<i16>,
+        t3: Option<i32>,
+        t4: Option<i64>,
         t5: Option<f64>,
         t6: Option<BigDecimal>,
         t7: Option<String>,
@@ -107,9 +81,9 @@ fn table_column_test() -> Result<(), VoltError> {
     impl From<&mut VoltTable> for Test {
         fn from(table: &mut VoltTable) -> Self {
             let t1 = table.get_bool_by_column("T1").unwrap();
-            let t2 = table.get_i8_by_column("t2").unwrap();
-            let t3 = table.get_i16_by_column("t3").unwrap();
-            let t4 = table.get_i32_by_column("t4").unwrap();
+            let t2 = table.get_i16_by_column("t2").unwrap();
+            let t3 = table.get_i32_by_column("t3").unwrap();
+            let t4 = table.get_i64_by_column("t4").unwrap();
             let t5 = table.get_f64_by_column("t5").unwrap();
             let t6 = table.get_decimal_by_column("t6").unwrap();
             let t7 = table.get_string_by_column("t7").unwrap();
@@ -128,9 +102,9 @@ fn table_column_test() -> Result<(), VoltError> {
             }
         }
     }
-
-    let url = init();
-    let mut node = get_node(url.as_str()).unwrap();
+    let url = "localhost";
+    let port = host_port.unwrap();
+    let mut node = get_node(&*format!("{}:{}", url, port)).unwrap();
     populate(&mut node);
     let insert = "insert into test_types (T1) values (NULL);";
     execute_success(&mut node, insert);
@@ -146,11 +120,34 @@ fn table_column_test() -> Result<(), VoltError> {
     table.advance_row();
     let test: Test = table.map_row();
     assert_eq!(test.t1, Some(true));
-    assert_eq!(test.t2, Some(2 as i8));
-    assert_eq!(test.t3, Some(3 as i16));
-    assert_eq!(test.t4, Some(4 as i32));
+    assert_eq!(test.t2, Some(2 as i16));
+    assert_eq!(test.t3, Some(3 as i32));
+    assert_eq!(test.t4, Some(4 as i64));
     assert_eq!(test.t5, Some(5 as f64));
     assert_eq!(test.t6, Some(BigDecimal::from(6)));
     assert_eq!(test.t7, Some("7".to_owned()));
+    let rc = Arc::new(AtomicPtr::new(&mut node));
+    let mut vec: Vec<JoinHandle<_>> = vec![];
+    let start = SystemTime::now();
+    for _ in 0..512 {
+        let local = Arc::clone(&rc);
+        let handle = thread::spawn(move || unsafe {
+            let load = local.load(Acquire);
+            let res = &(*load).query("select * from test_types where t1 = 1;").unwrap();
+            let mut table = block_for_result(&res).unwrap();
+            table.advance_row();
+            let _: Test = table.map_row();
+        }
+        );
+        vec.push(handle);
+    }
+    for handle in vec {
+        handle.join().unwrap();
+    }
+    let since_the_epoch = SystemTime::now()
+        .duration_since(start)
+        .expect("Time went backwards");
+    println!("{:?}", since_the_epoch);
+    node.shutdown()?;
     Ok(())
 }
