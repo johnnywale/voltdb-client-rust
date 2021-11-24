@@ -1,4 +1,4 @@
-use std::fmt::Debug;
+use std::fmt::{Debug};
 use std::str::Utf8Error;
 use std::sync::PoisonError;
 
@@ -90,6 +90,10 @@ pub enum VoltError {
         ConnectionNotAvailable {
              display("Connection lost")
         }
+       InvalidConfig {
+             display("Invalid Config")
+        }
+        Timeout
 
 
 }}
@@ -100,13 +104,15 @@ impl<T> From<PoisonError<T>> for VoltError {
     }
 }
 
+pub trait ValuePrimary {}
+
 //pub trait
 pub trait Value: Debug {
     fn get_write_length(&self) -> i32;
     fn marshal(&self, bytebuffer: &mut ByteBuffer);
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8);
     fn to_value_string(&self) -> String;
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> where Self: Sized;
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized;
 }
 
 
@@ -143,14 +149,11 @@ impl Value for bool {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_BIT_VALUE {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs[0] == 0 {
-            return Ok(Some(false));
+            return Ok(false);
         }
-        return Ok(Some(true));
+        return Ok(true);
     }
 }
 
@@ -180,13 +183,10 @@ impl Value for BigDecimal {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> where Self: Sized {
-        if bs == NULL_DECIMAL {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized {
         let int = BigInt::from_signed_bytes_be(&*bs);
         let decimal = BigDecimal::new(int, 12);
-        return Ok(Some(decimal));
+        return Ok(decimal);
     }
 }
 
@@ -209,13 +209,10 @@ impl Value for i8 {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_BIT_VALUE {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i8()?;
-        return Ok(Some(value));
+        return Ok(value);
     }
 }
 
@@ -238,13 +235,10 @@ impl Value for u8 {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_BIT_VALUE {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u8()?;
-        return Ok(Some(value));
+        return Ok(value);
     }
 }
 
@@ -267,13 +261,10 @@ impl Value for i16 {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_SHORT_VALUE {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i16()?;
-        return Ok(Some(value));
+        return Ok(value);
     }
 }
 
@@ -296,13 +287,10 @@ impl Value for u16 {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_SHORT_VALUE {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u16()?;
-        return Ok(Some(value));
+        return Ok(value);
     }
 }
 
@@ -325,13 +313,10 @@ impl Value for i32 {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_INT_VALUE {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i32()?;
-        return Ok(Some(value));
+        return Ok(value);
     }
 }
 
@@ -354,13 +339,10 @@ impl Value for u32 {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_INT_VALUE {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u32()?;
-        return Ok(Some(value));
+        return Ok(value);
     }
 }
 
@@ -383,13 +365,10 @@ impl Value for i64 {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_LONG_VALUE {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i64()?;
-        return Ok(Some(value));
+        return Ok(value);
     }
 }
 
@@ -412,13 +391,10 @@ impl Value for u64 {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_LONG_VALUE {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u64()?;
-        return Ok(Some(value));
+        return Ok(value);
     }
 }
 
@@ -440,13 +416,10 @@ impl Value for f64 {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_FLOAT_VALUE {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_f64()?;
-        return Ok(Some(value));
+        return Ok(value);
     }
 }
 
@@ -469,23 +442,23 @@ impl Value for String {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, table_column: &Column) -> Result<Option<Self>, VoltError> {
+    fn from_bytes(bs: Vec<u8>, table_column: &Column) -> Result<Self, VoltError> {
         return match table_column.header_type {
             STRING_COLUMN => {
-                if bs == NULL_VARCHAR {
-                    return Ok(Option::None);
-                }
+                // if bs == NULL_VARCHAR {
+                //     return Ok(Option::None);
+                // }
                 let mut buffer = ByteBuffer::from_bytes(&bs);
-                Ok(Option::Some(buffer.read_string()?))
+                Ok(buffer.read_string()?)
             }
             _ => {
                 let res = crate::table::VoltTable::get_value_by_idx_column(table_column, bs)?;
                 match res {
                     Some(v) => {
-                        Ok(Option::Some(v.to_value_string()))
+                        Ok(v.to_value_string())
                     }
                     None => {
-                        Ok(Option::None)
+                        Ok("".to_string())
                     }
                 }
             }
@@ -512,7 +485,7 @@ impl Value for &str {
         return self.to_string();
     }
 
-    fn from_bytes(_bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
+    fn from_bytes(_bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         todo!()
     }
 }
@@ -537,49 +510,13 @@ impl Value for Vec<u8> {
         return format!("{:?}", self);
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> {
-        if bs == NULL_VARCHAR {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         let mut cp = bs.clone();
         cp.drain(0..4);
-        return Ok(Option::Some(cp));
+        return Ok(cp);
     }
 }
 
-// impl Value for [u8] {
-//     fn get_write_length(&self) -> i32 {
-//         return (5 + self.len()) as i32;
-//     }
-//
-//     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
-//         bytebuffer.write_i8(VAR_BIN_COLUMN);
-//         bytebuffer.write_u32(self.len() as u32);
-//         bytebuffer.write_bytes(&self);
-//     }
-//
-//     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
-//         bytebuffer.write_u32(self.len() as u32);
-//         bytebuffer.write_bytes(&self);
-//     }
-//
-//     fn to_value_string(&self) -> String {
-//         return format!("{:?}", self);
-//     }
-//
-//     fn from_bytes(bs: Vec<u8>) -> Result<Option<Self>, VoltError> where Self: Sized {
-//         todo!()
-//     }
-//
-//     // fn from_bytes(bs: Vec<u8>) -> Result<Option<Self>, VoltError> where Self: Sized {
-//     //     if bs == NULL_VARCHAR {
-//     //         return Ok(Option::None);
-//     //     }
-//     //     let mut res = bs.clone();
-//     //     res.drain(0..4);
-//     //     return Ok(Option::Some(*bs));
-//     // }
-// }
 
 impl Value for DateTime<Utc> {
     fn get_write_length(&self) -> i32 {
@@ -598,13 +535,10 @@ impl Value for DateTime<Utc> {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> where Self: Sized {
-        if bs == NULL_TIMESTAMP {
-            return Ok(Option::None);
-        }
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let time = buffer.read_i64()?;
-        return Ok(Option::Some(Utc.timestamp_millis(time / 1000)));
+        return Ok(Utc.timestamp_millis(time / 1000));
     }
 }
 
