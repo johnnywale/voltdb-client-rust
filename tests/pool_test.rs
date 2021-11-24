@@ -1,15 +1,12 @@
 extern crate lazy_static;
 
-use std::{fs, panic, thread};
-use std::borrow::BorrowMut;
+use std::thread;
 use std::ops::{Deref, DerefMut};
-use std::ptr::{self, null_mut};
-use std::rc::Rc;
-use std::sync::{Arc, Mutex, Once};
-use std::sync::atomic::{AtomicPtr, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicPtr};
 use std::sync::atomic::Ordering::Acquire;
 use std::thread::JoinHandle;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime};
 
 use testcontainers::clients::Cli;
 use testcontainers::Docker;
@@ -31,8 +28,8 @@ fn test_pool() -> Result<(), VoltError> {
     let mut vec: Vec<JoinHandle<_>> = vec![];
     let start = SystemTime::now();
 
-    for i in 0..512 {
-        let mut local = Arc::clone(&rc);
+    for _ in 0..512 {
+        let local = Arc::clone(&rc);
         let handle = thread::spawn(move || unsafe {
             let pool = local.load(Acquire);
             let mut c = (*pool).get_conn().unwrap();

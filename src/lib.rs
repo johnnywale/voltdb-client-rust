@@ -178,6 +178,7 @@ mod procedure_invocation;
 mod response;
 mod generate;
 mod pool;
+mod encode_option;
 
 pub use chrono;
 pub use bigdecimal;

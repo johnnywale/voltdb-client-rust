@@ -61,7 +61,7 @@ impl Value for VoltTable {
         return "table".to_owned();
     }
 
-    fn from_bytes(_bs: Vec<u8>, _column: &Column) -> Result<Option<Self>, VoltError> where Self: Sized {
+    fn from_bytes(_bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized {
         todo!()
     }
 }
@@ -136,19 +136,18 @@ impl VoltTable {
     pub fn map_row<'a, T: From<&'a mut VoltTable>>(&'a mut self) -> T {
         return T::from(self);
     }
-    pub fn take<T: Value>(&mut self, column: i16) -> Result<Option<T>, VoltError> {
+    pub fn take<T: Value>(&mut self, column: i16) -> Result<T, VoltError> {
         let bs = self.get_bytes_by_idx(column)?;
         let column = self.get_column_by_index(column)?;
         return T::from_bytes(bs, column);
     }
 
-    pub fn fetch<T: Value>(&mut self, column: &str) -> Result<Option<T>, VoltError> {
+    pub fn fetch<T: Value>(&mut self, column: &str) -> Result<T, VoltError> {
         let idx = self.get_column_index(column)?;
         let bs = self.get_bytes_by_idx(idx)?;
         let column = self.get_column_by_index(idx)?;
         return T::from_bytes(bs, column);
     }
-
 
     pub fn debug_row(&mut self) -> String {
         let x: Vec<String> = self.columns().into_iter().enumerate().map(|(idx, column)| {
@@ -250,33 +249,33 @@ impl VoltTable {
             crate::encode::TINYINT_COLUMN => {
                 let res = i8::from_bytes(bs, column)?;
                 match res {
-                    None => {
+                    i8::MIN => {
                         Ok(None)
                     }
-                    Some(v) => {
-                        Ok(Some(Box::new(v)))
+                    _ => {
+                        Ok(Some(Box::new(res)))
                     }
                 }
             }
             crate::encode::SHORT_COLUMN => {
                 let res = i16::from_bytes(bs, column)?;
                 match res {
-                    None => {
+                    i16::MIN => {
                         Ok(None)
                     }
-                    Some(v) => {
-                        Ok(Some(Box::new(v)))
+                    _ => {
+                        Ok(Some(Box::new(res)))
                     }
                 }
             }
             crate::encode::INT_COLUMN => {
                 let res = i32::from_bytes(bs, column)?;
                 match res {
-                    None => {
+                    i32::MIN => {
                         Ok(None)
                     }
-                    Some(v) => {
-                        Ok(Some(Box::new(v)))
+                    _ => {
+                        Ok(Some(Box::new(res)))
                     }
                 }
             }
@@ -284,83 +283,59 @@ impl VoltTable {
             crate::encode::LONG_COLUMN => {
                 let res = i64::from_bytes(bs, column)?;
                 match res {
-                    None => {
+                    i64::MIN => {
                         Ok(None)
                     }
-                    Some(v) => {
-                        Ok(Some(Box::new(v)))
+                    _ => {
+                        Ok(Some(Box::new(res)))
                     }
                 }
             }
 
             crate::encode::FLOAT_COLUMN => {
-                let res = f64::from_bytes(bs, column)?;
-                match res {
-                    None => {
-                        Ok(None)
-                    }
-                    Some(v) => {
-                        Ok(Some(Box::new(v)))
-                    }
+                if bs == NULL_FLOAT_VALUE {
+                    return Ok(None);
                 }
+                let res = f64::from_bytes(bs, column)?;
+                return Ok(Some(Box::new(res)));
             }
 
             crate::encode::STRING_COLUMN => {
-                let res = String::from_bytes(bs, column)?;
-                match res {
-                    None => {
-                        Ok(None)
-                    }
-                    Some(v) => {
-                        Ok(Some(Box::new(v)))
-                    }
+                if bs.len() == 4 {
+                    return Ok(None);
                 }
+                let res = String::from_bytes(bs, column)?;
+                return Ok(Some(Box::new(res)));
             }
 
             crate::encode::TIMESTAMP_COLUMN => {
+                if bs == NULL_TIMESTAMP {
+                    return Ok(None);
+                }
                 let res = DateTime::from_bytes(bs, column)?;
-                match res {
-                    None => {
-                        Ok(None)
-                    }
-                    Some(v) => {
-                        Ok(Some(Box::new(v)))
-                    }
-                }
+                return Ok(Some(Box::new(res)));
             }
-
             crate::encode::DECIMAL_COLUMN => {
-                let res = BigDecimal::from_bytes(bs, column)?;
-                match res {
-                    None => {
-                        Ok(None)
-                    }
-                    Some(v) => {
-                        Ok(Some(Box::new(v)))
-                    }
+                if bs == NULL_DECIMAL {
+                    return Ok(None);
                 }
+                let res = DateTime::from_bytes(bs, column)?;
+                return Ok(Some(Box::new(res)));
             }
             crate::encode::VAR_BIN_COLUMN => {
-                let res = Vec::from_bytes(bs, column)?;
-                match res {
-                    None => {
-                        Ok(None)
-                    }
-                    Some(v) => {
-                        Ok(Some(Box::new(v)))
-                    }
+                if bs.len() == 4 {
+                    return Ok(None);
                 }
+                let res = Vec::from_bytes(bs, column)?;
+                return Ok(Some(Box::new(res)));
             }
             _ => {
                 let res = i16::from_bytes(bs, column)?;
-                match res {
-                    None => {
-                        Ok(None)
-                    }
-                    Some(v) => {
-                        Ok(Some(Box::new(v)))
-                    }
-                }
+                // match res {
+                //     Some(v) => {
+                Ok(Some(Box::new(res)))
+                //     }
+                // }
             }
         };
     }
@@ -443,6 +418,7 @@ impl VoltTable {
             }
         };
     }
+
     #[allow(mutable_borrow_reservation_conflict)]
     pub fn get_string_by_idx(&mut self, column: i16) -> Result<Option<String>, VoltError> {
         let table_column = self.get_column_by_index(column)?; // will change type and name into one map
@@ -505,6 +481,7 @@ impl VoltTable {
         self.row_index = row_index;
         return true;
     }
+
     fn get_column_type_by_idx(&self, column_idx: i16) -> Result<i8, VoltError> {
         let v = self.columns.get(column_idx as usize);
         if v.is_some() {
