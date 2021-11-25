@@ -249,7 +249,7 @@ impl VoltTable {
             crate::encode::TINYINT_COLUMN => {
                 let res = i8::from_bytes(bs, column)?;
                 match res {
-                    i8::MAX => {
+                    i8::MIN => {
                         Ok(None)
                     }
                     _ => {
@@ -260,7 +260,7 @@ impl VoltTable {
             crate::encode::SHORT_COLUMN => {
                 let res = i16::from_bytes(bs, column)?;
                 match res {
-                    i16::MAX => {
+                    i16::MIN => {
                         Ok(None)
                     }
                     _ => {
@@ -271,7 +271,7 @@ impl VoltTable {
             crate::encode::INT_COLUMN => {
                 let res = i32::from_bytes(bs, column)?;
                 match res {
-                    i32::MAX => {
+                    i32::MIN => {
                         Ok(None)
                     }
                     _ => {
@@ -283,7 +283,7 @@ impl VoltTable {
             crate::encode::LONG_COLUMN => {
                 let res = i64::from_bytes(bs, column)?;
                 match res {
-                    i64::MAX => {
+                    i64::MIN => {
                         Ok(None)
                     }
                     _ => {
