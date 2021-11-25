@@ -5,10 +5,9 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
 };
-use std::sync::mpsc::Receiver;
 use std::time::SystemTime;
 
-use crate::{Node, node, NodeOpt, Opts, Value, VoltError, VoltTable};
+use crate::{block_for_result, Node, node, NodeOpt, Opts, Value, VoltError, VoltTable};
 
 #[derive(Debug)]
 struct InnerPool {
@@ -117,16 +116,16 @@ impl<'a> Drop for PooledConn<'a> {
 }
 
 impl<'a> PooledConn<'a> {
-    pub fn query(&mut self, sql: &str) -> Result<Receiver<VoltTable>, VoltError> {
-        return self.conn.query(sql);
+    pub fn query(&mut self, sql: &str) -> Result<VoltTable, VoltError> {
+        return block_for_result(&self.conn.query(sql)?);
     }
-    pub fn list_procedures(&mut self) -> Result<Receiver<VoltTable>, VoltError> {
-        return self.conn.list_procedures();
+    pub fn list_procedures(&mut self) -> Result<VoltTable, VoltError> {
+        return block_for_result(&self.conn.list_procedures()?);
     }
-    pub fn call_sp(&mut self, query: &str, param: Vec<&dyn Value>) -> Result<Receiver<VoltTable>, VoltError> {
-        return self.conn.call_sp(query, param);
+    pub fn call_sp(&mut self, query: &str, param: Vec<&dyn Value>) -> Result<VoltTable, VoltError> {
+        return block_for_result(&self.conn.call_sp(query, param)?);
     }
-    pub fn upload_jar(&mut self, bs: Vec<u8>) -> Result<Receiver<VoltTable>, VoltError> {
-        return self.conn.upload_jar(bs);
+    pub fn upload_jar(&mut self, bs: Vec<u8>) -> Result<VoltTable, VoltError> {
+        return block_for_result(&self.conn.upload_jar(bs)?);
     }
 }

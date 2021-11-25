@@ -1,7 +1,7 @@
-extern crate lazy_static;
-
-
+use std::sync::Arc;
+use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering::Acquire;
+use std::thread;
 use std::thread::JoinHandle;
 use std::time::SystemTime;
 
@@ -10,9 +10,6 @@ use testcontainers::Docker;
 use testcontainers::images::generic::{GenericImage, Stream, WaitFor};
 
 use voltdb_client_rust::*;
-use std::sync::atomic::AtomicPtr;
-use std::sync::Arc;
-use std::thread;
 
 #[test]
 fn test_pool() -> Result<(), VoltError> {
@@ -35,8 +32,7 @@ fn test_pool() -> Result<(), VoltError> {
         let handle = thread::spawn(move || unsafe {
             let pool = local.load(Acquire);
             let mut c = (*pool).get_conn().unwrap();
-            let res = c.list_procedures().unwrap();
-            let mut table = block_for_result(&res).unwrap();
+            let mut table = c.list_procedures().unwrap();
             table.advance_row();
         }
         );

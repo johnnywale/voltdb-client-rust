@@ -38,35 +38,24 @@ fn main() -> Result<(), VoltError> {
 
     let mut node = pool.get_conn()?;
     // Create table if not exists.
-    let has_table_check = block_for_result(&node.query("select t1 from test_types limit 1")?);
+    let has_table_check = node.query("select t1 from test_types limit 1");
     match has_table_check {
         Ok(_) => {}
         Err(err) => {
             println!("{:?}", err);
             println!("will create table");
-            let create_table = "CREATE TABLE  test_types
-                    (
-                    t1 TINYINT,
-                    t2 SMALLINT,
-                    t3 INTEGER,
-                    t4 BIGINT,
-                    t5 FLOAT,
-                    t6 DECIMAL,
-                    t7 VARCHAR,
-                    t8 VARBINARY,
-                    t9 TIMESTAMP,
-                    );";
-            block_for_result(&node.query(create_table)?)?;
+            let create_table = "CREATE TABLE  test_types (t1 TINYINT,t2 SMALLINT,t3 INTEGER,t4 BIGINT,t5 FLOAT,t6 DECIMAL,t7 VARCHAR,t8 VARBINARY, t9 TIMESTAMP);";
+            node.query(create_table)?;
         }
     }
 
     // Insert empty data into table , make sure None is working.
     let insert = "insert into test_types (T1) values (NULL);";
-    block_for_result(&node.query(insert)?)?;
+    node.query(insert)?;
     // Insert min/max value to table to validate the encoding.
-    block_for_result(&node.query("insert into test_types (T1,T2,T3,T4) values (1, -32767, -2147483647, -9223372036854775807 );")?)?;
-    block_for_result(&node.query("insert into test_types (T1,T2,T3,T4) values (1, 32767, 2147483647, 9223372036854775807 );")?)?;
-    let mut table = block_for_result(&node.query("select * from test_types")?)?;
+    node.query("insert into test_types (T1,T2,T3,T4) values (1, -32767, -2147483647, -9223372036854775807 );")?;
+    node.query("insert into test_types (T1,T2,T3,T4) values (1, 32767, 2147483647, 9223372036854775807 );")?;
+    let mut table = node.query("select * from test_types")?;
     while table.advance_row() {
         let test: Test = table.map_row();
         println!("{:?}", test);
@@ -77,7 +66,7 @@ fn main() -> Result<(), VoltError> {
 
 
     // call sp with marco `volt_parma!` , test_types.insert is crated with table.
-    let mut table = block_for_result(&node.call_sp("test_types.insert", volt_param![1,none_i16,3,4,5,6,"7",bs,time])?)?;
+    let mut table = node.call_sp("test_types.insert", volt_param![1,none_i16,3,4,5,6,"7",bs,time])?;
     while table.advance_row() {
         println!("{}", table.debug_row());
     }
@@ -114,7 +103,7 @@ fn main() -> Result<(), VoltError> {
     //         return application;
     //     }
     // }
-    let mut table = block_for_result(&node.list_procedures()?)?;
+    let mut table = node.list_procedures()?;
     let mut sp_created = false;
     while table.advance_row() {
         if table.get_string_by_column("PROCEDURE_NAME")?.unwrap() == "ApplicationCreate" {
@@ -127,13 +116,11 @@ fn main() -> Result<(), VoltError> {
     if !sp_created {
         // upload proc into server
         let jars = fs::read("tests/procedures.jar").unwrap();
-        let x = node.upload_jar(jars).unwrap();
-        let mut table = x.recv().unwrap();
+        let mut table = node.upload_jar(jars).unwrap();
         assert!(table.has_error().is_none());
         let script = "CREATE PROCEDURE  FROM CLASS com.johnny.ApplicationCreate;";
-        block_for_result(&node.query(script)?)?;
+        node.query(script)?;
     }
-
 
 
     let null_i16: Option<i16> = Option::None;
@@ -145,7 +132,7 @@ fn main() -> Result<(), VoltError> {
     let data = volt_param! {true, null_i16 , 2147483647 as i32,  9223372036854775807 as i64 ,  15.0, decimal  , "17",bs, time   };
     table.add_row(data)?;
     // call proc with volt table
-    let mut res = block_for_result(&node.call_sp("ApplicationCreate", volt_param![table])?)?;
+    let mut res = node.call_sp("ApplicationCreate", volt_param![table])?;
     while res.advance_row() {
         println!("{:?}", res.debug_row());
     }
