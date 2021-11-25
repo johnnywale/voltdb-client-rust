@@ -110,7 +110,7 @@ pub struct PooledConn<'a> {
 
 impl<'a> Drop for PooledConn<'a> {
     fn drop(&mut self) {
-        let since = SystemTime::now().duration_since(self.created);
+//        let since = SystemTime::now().duration_since(self.created);
         // TODO record error ,
         //   println!("used {:?} ", since)
     }
