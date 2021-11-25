@@ -38,3 +38,6 @@ gen:
 clean_container:
 	docker stop $$(docker ps -a -q --filter ancestor="voltdb/voltdb-community:9.2.1" --format="{{.ID}}")
 	docker rm $$(docker ps -a -q --filter ancestor="voltdb/voltdb-community:9.2.1" --format="{{.ID}}")
+
+docker run --privileged -d --restart=unless-stopped -p 80:80 -p 443:443 rancher/rancher
+

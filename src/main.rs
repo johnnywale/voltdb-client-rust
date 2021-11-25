@@ -3,7 +3,6 @@ use std::time::SystemTime;
 
 use voltdb_client_rust::*;
 
-
 fn main() -> Result<(), VoltError> {
     #[derive(Debug)]
     struct Test {
@@ -33,8 +32,11 @@ fn main() -> Result<(), VoltError> {
             }
         }
     }
-    // Creates new `Node`.
-    let mut node = get_node("localhost:21211")?;
+
+    let hosts = vec![IpPort::new("localhost".to_string(), 21211)];
+    let mut pool = Pool::new(Opts::new(hosts)).unwrap();
+
+    let mut node = pool.get_conn()?;
     // Create table if not exists.
     let has_table_check = block_for_result(&node.query("select t1 from test_types limit 1")?);
     match has_table_check {
@@ -144,8 +146,5 @@ fn main() -> Result<(), VoltError> {
     while res.advance_row() {
         println!("{:?}", res.debug_row());
     }
-    node.shutdown()?;
-
-
     Ok({})
 }

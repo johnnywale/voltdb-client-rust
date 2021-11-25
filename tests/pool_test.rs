@@ -1,12 +1,12 @@
 extern crate lazy_static;
 
-use std::thread;
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicPtr};
+use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering::Acquire;
+use std::thread;
 use std::thread::JoinHandle;
-use std::time::{SystemTime};
+use std::time::SystemTime;
 
 use testcontainers::clients::Cli;
 use testcontainers::Docker;
@@ -23,7 +23,9 @@ fn test_pool() -> Result<(), VoltError> {
         .with_wait_for(wait);
     let docker = c.run(voltdb);
     let host_port = docker.get_host_port(21211);
-    let mut pool = Pool::new(Opts::new("localhost".to_string(), host_port.unwrap())).unwrap();
+    let host_ip = HostIp::new("localhost".to_string(), host_port.unwrap());
+    let hosts = vec![host_ip];
+    let mut pool = Pool::new(Opts::new(hosts)).unwrap();
     let rc = Arc::new(AtomicPtr::new(&mut pool));
     let mut vec: Vec<JoinHandle<_>> = vec![];
     let start = SystemTime::now();

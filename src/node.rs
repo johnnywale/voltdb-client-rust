@@ -24,12 +24,27 @@ const PING_HANDLE: i64 = 1 << 63 - 1;
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Opts(pub(crate) Box<InnerOpts>);
 
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct IpPort {
+    ip_host: String,
+    port: u16,
+}
+
+impl IpPort {
+    pub fn new(ip_host: String,
+               port: u16) -> Self {
+        return IpPort {
+            ip_host,
+            port,
+        };
+    }
+}
+
 impl Opts {
-    pub fn new(host: String, port: u16) -> Opts {
+    pub fn new(hosts: Vec<IpPort>) -> Opts {
         let opt = Opts {
             0: Box::new(InnerOpts {
-                ip_or_hostname: host,
-                tcp_port: port,
+                ip_ports: hosts,
                 user: None,
                 pass: None,
             })
@@ -40,10 +55,16 @@ impl Opts {
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub(crate) struct InnerOpts {
-    ip_or_hostname: String,
-    tcp_port: u16,
-    user: Option<String>,
-    pass: Option<String>,
+    pub(crate) ip_ports: Vec<IpPort>,
+    pub(crate) user: Option<String>,
+    pub(crate) pass: Option<String>,
+}
+
+
+pub struct NodeOpt {
+    pub ip_port: IpPort,
+    pub user: Option<String>,
+    pub pass: Option<String>,
 
 }
 
@@ -91,9 +112,9 @@ impl Connection for Node {}
 
 
 impl Node {
-    pub fn new(opts: Opts) -> Result<Node, VoltError> {
-        let opt = opts.0;
-        let addr = format!("{}:{}", opt.ip_or_hostname, opt.tcp_port);
+    pub fn new(opt: NodeOpt) -> Result<Node, VoltError> {
+        let ip_host = opt.ip_port;
+        let addr = format!("{}:{}", ip_host.ip_host, ip_host.port);
         let mut buffer = ByteBuffer::new();
         let result = [1; 1];
         buffer.write_u32(0);
@@ -336,13 +357,11 @@ pub fn get_node(addr: &str) -> Result<Node, VoltError> {
     let url = addr.split(":").collect::<Vec<&str>>();
     let host = url.get(0).unwrap().to_string();
     let port = u16::from_str(url.get(1).unwrap()).unwrap();
-    let opt = Opts {
-        0: Box::new(InnerOpts {
-            ip_or_hostname: host,
-            tcp_port: port,
-            user: None,
-            pass: None,
-        })
+    let ip_port = IpPort::new(host, port);
+    let opt = NodeOpt {
+        ip_port,
+        user: None,
+        pass: None,
     };
     return Node::new(opt);
 }

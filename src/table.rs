@@ -500,7 +500,6 @@ pub fn new_volt_table(bytebuffer: &mut ByteBuffer, info: VoltResponseInfo) -> Re
             info_bytes: Default::default(),
             column_info_bytes: Default::default(),
             columns: vec![],
-
             num_rows: -1,
             rows: vec![],
             row_index: -1,
