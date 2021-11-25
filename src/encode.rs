@@ -1,4 +1,4 @@
-use std::fmt::{Debug};
+use std::fmt::Debug;
 use std::str::Utf8Error;
 use std::sync::PoisonError;
 
@@ -593,11 +593,60 @@ mod tests {
         let i = ByteBuffer::from_bytes(&NULL_LONG_VALUE).read_i64().unwrap();
         assert_eq!(i, -9223372036854775808);
 
+        let column = Column {
+            header_name: "".to_string(),
+            header_type: STRING_COLUMN,
+        };
 
-        let mut byte = ByteBuffer::new();
-        byte.write_i32(-1);
-        let bs = byte.to_bytes();
-        println!("{:?}", bs)
+        let vec = NULL_BIT_VALUE.to_vec();
+        let op: Option<i8> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+        let vec = NULL_BIT_VALUE.to_vec();
+        let op: Option<u8> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+        let vec = NULL_SHORT_VALUE.to_vec();
+        let op: Option<i16> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+        let vec = NULL_SHORT_VALUE.to_vec();
+        let op: Option<u16> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+        let vec = NULL_INT_VALUE.to_vec();
+        let op: Option<i32> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+        let vec = NULL_INT_VALUE.to_vec();
+        let op: Option<u32> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+
+        let vec = NULL_LONG_VALUE.to_vec();
+        let op: Option<i64> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+        let vec = NULL_LONG_VALUE.to_vec();
+        let op: Option<u64> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+
+
+        let vec = NULL_VARCHAR.to_vec();
+        let op: Option<String> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+
+        let vec = NULL_VARCHAR.to_vec();
+        let op: Option<Vec<u8>> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+
+
+        let vec = NULL_FLOAT_VALUE.to_vec();
+        let op: Option<f64> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+
+
+        let vec = NULL_DECIMAL.to_vec();
+        let op: Option<BigDecimal> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
+
+
+        let vec = NULL_TIMESTAMP.to_vec();
+        let op: Option<DateTime<Utc>> = Option::from_bytes(vec, &column).unwrap();
+        assert_eq!(None, op);
     }
 
     #[test]
@@ -605,15 +654,5 @@ mod tests {
         let err = VoltError::NoValue("key is af".to_owned());
         println!("{:?} {} ", err, err);
     }
-
-    // #[test]
-    // fn test_vec() {
-    //     let xs: [u8; 5] = [1, 2, 3, 4, 5];
-    //     println!("{}", xs.get_write_length());
-    //     let mut ve = Vec::new();
-    //     ve.push(1 as u8);
-    //     ve.push(10 as u8);
-    //     println!("{}", &ve.get_write_length());
-    // }
 }
 

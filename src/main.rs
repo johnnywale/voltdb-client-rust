@@ -44,18 +44,7 @@ fn main() -> Result<(), VoltError> {
         Err(err) => {
             println!("{:?}", err);
             println!("will create table");
-            let create_table = "CREATE TABLE  test_types
-                    (
-                    t1 TINYINT,
-                    t2 SMALLINT,
-                    t3 INTEGER,
-                    t4 BIGINT,
-                    t5 FLOAT,
-                    t6 DECIMAL,
-                    t7 VARCHAR,
-                    t8 VARBINARY,
-                    t9 TIMESTAMP,
-                    );";
+            let create_table = "CREATE TABLE  test_types (t1 TINYINT,t2 SMALLINT,t3 INTEGER,t4 BIGINT,t5 FLOAT,t6 DECIMAL,t7 VARCHAR,t8 VARBINARY, t9 TIMESTAMP);";
             node.query(create_table)?;
         }
     }

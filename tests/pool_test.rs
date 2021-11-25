@@ -1,6 +1,3 @@
-extern crate lazy_static;
-
-
 use std::sync::Arc;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering::Acquire;
