@@ -8,7 +8,7 @@ use std::{
 use std::sync::mpsc::Receiver;
 use std::time::SystemTime;
 
-use crate::{Node, node, Opts, VoltError, VoltTable};
+use crate::{Node, node, NodeOpt, Opts, Value, VoltError, VoltTable};
 
 #[derive(Debug)]
 struct InnerPool {
@@ -16,25 +16,36 @@ struct InnerPool {
     pool: Vec<Node>,
 }
 
+
 impl InnerPool {
+    pub fn node_sizes(&self) -> usize {
+        return self.opts.0.ip_ports.len();
+    }
+
+    fn to_node_opt(&self, i: usize) -> NodeOpt {
+        return NodeOpt {
+            ip_port: self.opts.0.ip_ports.get(i).cloned().unwrap(),
+            pass: self.opts.0.pass.clone(),
+            user: self.opts.0.user.clone(),
+        };
+    }
     fn get_node(&mut self, idx: usize) -> &mut Node {
         return self.pool.get_mut(idx).unwrap();
     }
-}
-
-impl InnerPool {
     fn new(size: usize, opts: Opts) -> Result<InnerPool, VoltError> {
         let mut pool = InnerPool {
             opts,
             pool: Vec::with_capacity(size),
         };
-        for _ in 0..size {
-            pool.new_conn()?;
+        let total = pool.node_sizes();
+        for i in 0..size {
+            let z = i % total;
+            pool.new_conn(z)?;
         }
         Ok(pool)
     }
-    fn new_conn(&mut self) -> Result<(), VoltError> {
-        match node::Node::new(self.opts.clone()) {
+    fn new_conn(&mut self, idx: usize) -> Result<(), VoltError> {
+        match node::Node::new(self.to_node_opt(idx)) {
             Ok(conn) => {
                 self.pool.push(conn);
                 Ok(())
@@ -99,8 +110,9 @@ pub struct PooledConn<'a> {
 
 impl<'a> Drop for PooledConn<'a> {
     fn drop(&mut self) {
-        let since = SystemTime::now().duration_since(self.created);
-        println!("used {:?} ", since)
+//        let since = SystemTime::now().duration_since(self.created);
+        // TODO record error ,
+        //   println!("used {:?} ", since)
     }
 }
 
@@ -110,6 +122,9 @@ impl<'a> PooledConn<'a> {
     }
     pub fn list_procedures(&mut self) -> Result<Receiver<VoltTable>, VoltError> {
         return self.conn.list_procedures();
+    }
+    pub fn call_sp(&mut self, query: &str, param: Vec<&dyn Value>) -> Result<Receiver<VoltTable>, VoltError> {
+        return self.conn.call_sp(query, param);
     }
     pub fn upload_jar(&mut self, bs: Vec<u8>) -> Result<Receiver<VoltTable>, VoltError> {
         return self.conn.upload_jar(bs);
