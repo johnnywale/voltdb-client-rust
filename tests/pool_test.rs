@@ -34,6 +34,7 @@ fn test_pool() -> Result<(), VoltError> {
             let mut c = (*pool).get_conn().unwrap();
             let mut table = c.list_procedures().unwrap();
             table.advance_row();
+            println!("{}", table.debug_row())
         }
         );
         vec.push(handle);

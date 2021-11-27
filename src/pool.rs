@@ -5,14 +5,16 @@ use std::{
         atomic::{AtomicUsize, Ordering},
     },
 };
+use std::cell::UnsafeCell;
+use std::rc::Rc;
 use std::time::SystemTime;
 
 use crate::{block_for_result, Node, node, NodeOpt, Opts, Value, VoltError, VoltTable};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct InnerPool {
     opts: Opts,
-    pool: Vec<Node>,
+    pool: Vec<Rc<UnsafeCell<Node>>>,
 }
 
 
@@ -28,8 +30,10 @@ impl InnerPool {
             user: self.opts.0.user.clone(),
         };
     }
-    fn get_node(&mut self, idx: usize) -> &mut Node {
-        return self.pool.get_mut(idx).unwrap();
+    fn get_node(&mut self, idx: usize) -> *mut Node {
+        let rc = self.pool.get_mut(idx).unwrap();
+        let z = Rc::clone(rc);
+        z.get()
     }
     fn new(size: usize, opts: Opts) -> Result<InnerPool, VoltError> {
         let mut pool = InnerPool {
@@ -46,7 +50,7 @@ impl InnerPool {
     fn new_conn(&mut self, idx: usize) -> Result<(), VoltError> {
         match node::Node::new(self.to_node_opt(idx)) {
             Ok(conn) => {
-                self.pool.push(conn);
+                self.pool.push(Rc::new(UnsafeCell::new(conn)));
                 Ok(())
             }
             Err(err) => Err(err),
@@ -54,7 +58,7 @@ impl InnerPool {
     }
 }
 
-
+#[derive(Clone)]
 pub struct Pool {
     size: usize,
     total: Arc<AtomicUsize>,
@@ -76,9 +80,10 @@ impl Pool {
     fn _get_conn(&mut self) -> Result<PooledConn, VoltError> {
         let total = self.total.fetch_add(1, Ordering::Relaxed);
         let idx = total % self.size;
+        let node = self.inner_pool.get_node(idx);
         Ok(PooledConn {
             created: SystemTime::now(),
-            conn: self.inner_pool.get_node(idx),
+            conn: node,
         })
     }
 
@@ -102,12 +107,12 @@ impl Pool {
 }
 
 #[derive(Debug)]
-pub struct PooledConn<'a> {
+pub struct PooledConn {
     created: SystemTime,
-    conn: &'a mut Node,
+    conn: *mut Node,
 }
 
-impl<'a> Drop for PooledConn<'a> {
+impl Drop for PooledConn {
     fn drop(&mut self) {
 //        let since = SystemTime::now().duration_since(self.created);
         // TODO record error ,
@@ -115,17 +120,25 @@ impl<'a> Drop for PooledConn<'a> {
     }
 }
 
-impl<'a> PooledConn<'a> {
+impl PooledConn {
     pub fn query(&mut self, sql: &str) -> Result<VoltTable, VoltError> {
-        return block_for_result(&self.conn.query(sql)?);
+        unsafe {
+            return block_for_result(&(*self.conn).query(sql)?);
+        }
     }
     pub fn list_procedures(&mut self) -> Result<VoltTable, VoltError> {
-        return block_for_result(&self.conn.list_procedures()?);
+        unsafe {
+            return block_for_result(&(*self.conn).list_procedures()?);
+        }
     }
     pub fn call_sp(&mut self, query: &str, param: Vec<&dyn Value>) -> Result<VoltTable, VoltError> {
-        return block_for_result(&self.conn.call_sp(query, param)?);
+        unsafe {
+            return block_for_result(&(*self.conn).call_sp(query, param)?);
+        }
     }
     pub fn upload_jar(&mut self, bs: Vec<u8>) -> Result<VoltTable, VoltError> {
-        return block_for_result(&self.conn.upload_jar(bs)?);
+        unsafe {
+            return block_for_result(&(*self.conn).upload_jar(bs)?);
+        }
     }
 }
