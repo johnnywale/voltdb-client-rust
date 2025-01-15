@@ -134,26 +134,26 @@ impl Node {
                 let password = [];
                 let mut hasher: Sha256 = Sha256::new();
                 Digest::update(&mut hasher, password);
-                buffer.write(&hasher.finalize())?;
+                buffer.write_bytes(&hasher.finalize());
             }
             Some(password) => {
                 let password = password.as_bytes();
                 let mut hasher: Sha256 = Sha256::new();
                 Digest::update(&mut hasher, password);
-                buffer.write(&hasher.finalize())?;
+                buffer.write_bytes(&hasher.finalize());
             }
         }
 
         buffer.set_wpos(0);
         buffer.write_u32((buffer.len() - 4) as u32);
-        let bs = buffer.to_bytes();
+        let bs = buffer.as_bytes();
         let mut stream: TcpStream = TcpStream::connect(addr)?;
-        stream.write(&bs)?;
+        stream.write_all(bs)?;
         stream.flush()?;
         let read = stream.read_u32::<BigEndian>()?;
         let mut all = vec![0; read as usize];
         stream.read_exact(&mut all)?;
-        let mut res = ByteBuffer::from_bytes(&*all);
+        let mut res = ByteBuffer::from_bytes(&all);
         let _version = res.read_u8()?;
         let auth = res.read_u8()?;
         if auth != 0 {

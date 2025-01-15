@@ -44,11 +44,11 @@ impl Value for VoltTable {
         bytebuffer.write_u32(self.total_size as u32);
         bytebuffer.write_u32(self.header_size as u32);
         bytebuffer.write_u8(128);
-        bytebuffer.write_bytes(&*self.column_info_bytes.to_bytes());
+        bytebuffer.write_bytes(&*self.column_info_bytes.as_bytes());
         bytebuffer.write_u32(self.num_rows as u32);
         self.rows.iter().for_each(|f| {
             bytebuffer.write_u32(f.len() as u32);
-            bytebuffer.write_bytes(&*f.to_bytes());
+            bytebuffer.write_bytes(&*f.as_bytes());
         });
         println!("{}", bytebuffer.len())
     }
@@ -419,7 +419,6 @@ impl VoltTable {
         };
     }
 
-    #[allow(mutable_borrow_reservation_conflict)]
     pub fn get_string_by_idx(&mut self, column: i16) -> Result<Option<String>, VoltError> {
         let table_column = self.get_column_by_index(column)?; // will change type and name into one map
         return match table_column.header_type {
@@ -606,7 +605,7 @@ mod tests {
         x.add_row(data)?;
         let mut bf = ByteBuffer::new();
         x.marshal(&mut bf);
-        assert_eq!(bs, bf.to_bytes());
+        assert_eq!(bs, bf.as_bytes());
         Ok({})
     }
 
