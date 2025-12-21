@@ -46,6 +46,6 @@ impl<'a> ProcedureInvocation<'a> {
         for item in self.params.iter() {
             item.marshal(&mut buffer)
         }
-        return buffer.to_bytes();
+        return buffer.into_vec();
     }
 }

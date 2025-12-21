@@ -26,8 +26,8 @@ pub struct Opts(pub(crate) Box<InnerOpts>);
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IpPort {
-    ip_host: String,
-    port: u16,
+    pub(crate) ip_host: String,
+    pub(crate) port: u16,
 }
 
 impl IpPort {
@@ -146,7 +146,7 @@ impl Node {
 
         buffer.set_wpos(0);
         buffer.write_u32((buffer.len() - 4) as u32);
-        let bs = buffer.to_bytes();
+        let bs = buffer.into_vec();
         let mut stream: TcpStream = TcpStream::connect(addr)?;
         stream.write(&bs)?;
         stream.flush()?;
@@ -333,10 +333,10 @@ impl Node {
 
 #[derive(Debug, Clone)]
 pub struct ConnInfo {
-    host_id: i32,
-    connection: i64,
-    leader_addr: Ipv4Addr,
-    build: String,
+    pub(crate) host_id: i32,
+    pub(crate) connection: i64,
+    pub(crate) leader_addr: Ipv4Addr,
+    pub(crate) build: String,
 }
 
 /// Wait for response, convert response error from volt error to `VoltError`.

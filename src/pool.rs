@@ -73,7 +73,7 @@ impl fmt::Debug for Pool {
 }
 
 impl Pool {
-    fn _get_conn(&mut self) -> Result<PooledConn, VoltError> {
+    fn _get_conn(&mut self) -> Result<PooledConn<'_>, VoltError> {
         let total = self.total.fetch_add(1, Ordering::Relaxed);
         let idx = total % self.size;
         Ok(PooledConn {
@@ -96,7 +96,7 @@ impl Pool {
         })
     }
 
-    pub fn get_conn(&mut self) -> Result<PooledConn, VoltError> {
+    pub fn get_conn(&mut self) -> Result<PooledConn<'_>, VoltError> {
         self._get_conn()
     }
 }

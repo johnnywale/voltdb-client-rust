@@ -538,7 +538,7 @@ impl Value for DateTime<Utc> {
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized {
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let time = buffer.read_i64()?;
-        return Ok(Utc.timestamp_millis(time / 1000));
+        return Ok(Utc.timestamp_millis_opt(time / 1000).unwrap());
     }
 }
 
@@ -565,7 +565,7 @@ mod tests {
 
     #[test]
     fn test_time_stamp() {
-        let time = Utc.timestamp_millis(1637323002445000 / 1000);
+        let time = Utc.timestamp_millis_opt(1637323002445000 / 1000).unwrap();
         println!("{}", time.timestamp_millis() * 1000);
     }
 

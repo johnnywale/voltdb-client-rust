@@ -41,3 +41,9 @@ clean_container:
 
 docker run --privileged -d --restart=unless-stopped -p 80:80 -p 443:443 rancher/rancher
 
+
+  cargo test --test unit_test
+
+  # All tests with Docker running
+  cargo test --verbose
+  cargo test --features tokio --test async_test

@@ -1,15 +1,15 @@
 extern crate lazy_static;
 
-use std::{fs, panic, thread};
-use std::sync::{*};
+use std::{fs, thread};
+use std::sync::*;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering::Acquire;
 use std::thread::JoinHandle;
 use std::time::SystemTime;
 
-use testcontainers::{*};
-use testcontainers::clients::Cli;
-use testcontainers::images::generic::{GenericImage, Stream, WaitFor};
+use testcontainers::core::WaitFor;
+use testcontainers::runners::SyncRunner;
+use testcontainers::{GenericImage, ImageExt};
 
 use voltdb_client_rust::*;
 
@@ -56,13 +56,11 @@ fn execute_success(node: &mut Node, sql: &str) {
 
 #[test]
 fn test_multiples_thread() -> Result<(), VoltError> {
-    let c = Cli::default();
-    let wait = WaitFor::LogMessage { message: "Server completed initialization.".to_owned(), stream: Stream::StdOut };
-    let voltdb = GenericImage::new("voltdb/voltdb-community:9.2.1")
-        .with_env_var("HOST_COUNT", "1")
-        .with_wait_for(wait);
-    let docker = c.run(voltdb);
-    let host_port = docker.get_host_port(21211);
+    let voltdb = GenericImage::new("basvanbeek/voltdb-community", "9.2.1")
+        .with_wait_for(WaitFor::message_on_stdout("Server completed initialization."))
+        .with_env_var("HOST_COUNT", "1");
+    let docker = voltdb.start().unwrap();
+    let host_port = docker.get_host_port_ipv4(21211).unwrap();
 
 
 
@@ -103,7 +101,7 @@ fn test_multiples_thread() -> Result<(), VoltError> {
         }
     }
     let url = "localhost";
-    let port = host_port.unwrap();
+    let port = host_port;
     let mut node = get_node(&*format!("{}:{}", url, port)).unwrap();
     populate(&mut node);
     let insert = "insert into test_types (T1) values (NULL);";

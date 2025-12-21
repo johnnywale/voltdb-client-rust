@@ -5,22 +5,20 @@ use std::thread;
 use std::thread::JoinHandle;
 use std::time::SystemTime;
 
-use testcontainers::clients::Cli;
-use testcontainers::Docker;
-use testcontainers::images::generic::{GenericImage, Stream, WaitFor};
+use testcontainers::core::WaitFor;
+use testcontainers::runners::SyncRunner;
+use testcontainers::{GenericImage, ImageExt};
 
 use voltdb_client_rust::*;
 
 #[test]
 fn test_pool() -> Result<(), VoltError> {
-    let c = Cli::default();
-    let wait = WaitFor::LogMessage { message: "Server completed initialization.".to_owned(), stream: Stream::StdOut };
-    let voltdb = GenericImage::new("voltdb/voltdb-community:9.2.1")
-        .with_env_var("HOST_COUNT", "1")
-        .with_wait_for(wait);
-    let docker = c.run(voltdb);
-    let host_port = docker.get_host_port(21211);
-    let host_ip = IpPort::new("localhost".to_string(), host_port.unwrap());
+    let voltdb = GenericImage::new("basvanbeek/voltdb-community", "9.2.1")
+        .with_wait_for(WaitFor::message_on_stdout("Server completed initialization."))
+        .with_env_var("HOST_COUNT", "1");
+    let docker = voltdb.start().unwrap();
+    let host_port = docker.get_host_port_ipv4(21211).unwrap();
+    let host_ip = IpPort::new("localhost".to_string(), host_port);
     let hosts = vec![host_ip];
     let mut pool = Pool::new(Opts::new(hosts)).unwrap();
     let rc = Arc::new(AtomicPtr::new(&mut pool));

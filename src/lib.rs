@@ -170,6 +170,11 @@ mod generate;
 mod pool;
 mod encode_option;
 
+#[cfg(feature = "tokio")]
+pub mod async_node;
+#[cfg(feature = "tokio")]
+pub mod async_pool;
+
 pub use chrono;
 pub use bigdecimal;
 
@@ -179,6 +184,11 @@ pub use crate::encode::{*};
 pub use crate::pool::{*};
 pub use crate::bigdecimal::BigDecimal;
 pub use crate::chrono::{DateTime, Utc};
+
+#[cfg(feature = "tokio")]
+pub use crate::async_node::{AsyncNode, async_block_for_result};
+#[cfg(feature = "tokio")]
+pub use crate::async_pool::{AsyncPool, AsyncPooledConn};
 
 #[macro_export]
 macro_rules! volt_param {

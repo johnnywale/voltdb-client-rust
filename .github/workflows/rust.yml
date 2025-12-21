@@ -2,17 +2,82 @@ name: Rust
 
 on:
   push:
-    branches: [ main , dev, pool]
+    branches: [ main, dev, pool ]
+  pull_request:
+    branches: [ main ]
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-and-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - name: Build
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build (sync)
         run: cargo build --verbose
-      - name: Run tests
-        run: cargo test --verbose
+
+      - name: Build (with tokio)
+        run: cargo build --verbose --features tokio
+
+      - name: Run unit tests
+        run: cargo test --verbose --test unit_test
+
+      - name: Run library tests
+        run: cargo test --verbose --lib
+
+      - name: Run integration tests
+        run: cargo test --verbose --test integration_test
+
+      - name: Run pool tests
+        run: cargo test --verbose --test pool_test
+
+      - name: Run async tests
+        run: cargo test --verbose --features tokio --test async_test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Run Clippy (sync)
+        run: cargo clippy -- -D warnings
+        continue-on-error: true
+
+      - name: Run Clippy (with tokio)
+        run: cargo clippy --features tokio -- -D warnings
+        continue-on-error: true
+
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --check
+        continue-on-error: true

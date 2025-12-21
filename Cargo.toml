@@ -1,26 +1,31 @@
 [package]
 name = "voltdb-client-rust"
-version = "0.1.11"
-edition = "2018"
+version = "0.1.12"
+edition = "2021"
 authors = ["johnnywale <johnnywalee@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 description = """
 A socket client library for Voltdb server
 """
-categories = ["voltdb"]
+categories = ["database"]
 keywords = ["voltdb", "asynchronous"]
-
 repository = "https://github.com/johnnywale/voltdb-client-rust"
 
-[dependencies]
-bytebuffer-rs = "0.3.1"
-byteorder = "1.4.3"
-chrono = "0.4"
-bigdecimal = "0.3.0"
-sha2 = "0.9.8"
-quick-error = "2.0.1"
-[dev-dependencies]
-testcontainers = "0.12.0"
-lazy_static = "1.4.0"
+[features]
+default = []
+tokio = ["dep:tokio"]
 
+[dependencies]
+bytebuffer = "2.3.0"
+byteorder = "1.5"
+chrono = "0.4"
+bigdecimal = "0.4.0"
+sha2 = "0.10"
+quick-error = "2.0.1"
+tokio = { version = "1.35", features = ["net", "io-util", "sync", "rt", "macros"], optional = true }
+
+[dev-dependencies]
+testcontainers = { version = "0.26", features = ["blocking"] }
+lazy_static = "1.4.0"
+tokio = { version = "1.35", features = ["rt-multi-thread", "macros"] }
