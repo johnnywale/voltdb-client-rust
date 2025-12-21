@@ -4,39 +4,135 @@
 
 voltdb-client-rust is a socket client library for [voltdb].
 
+## Features
 
-Here list the data type and rust data type mapping 
+- **Sync API** - Blocking synchronous client (default)
+- **Async API** - Non-blocking async client with Tokio (optional `tokio` feature)
+- **Connection Pooling** - Both sync (`Pool`) and async (`AsyncPool`) connection pools
+- **Type-safe** - Strong typing with Rust's type system
 
-| SQL Datatype 	| Compatible Rust Datatypes 	| Option Supported 	|
-|---	|---	|---	|
-| TINYINT 	| i8/u8 	|  ✓	|
-| SMALLINT 	| i16/u16 	|  ✓	|
-| INTEGER 	| i32/u32 	|  ✓	|
-| BIGINT 	| i64/u64 	|  ✓	|
-| FLOAT 	| f64 	|  ✓	|
-| DECIMAL 	| bigdecimal::BigDecimal 	|  ✓	|
-| GEOGRAPHY 	| - 	|  	|
-| GEOGRAPHY_POINT 	| - 	|  	|
-| VARCHAR 	| String 	| ✓ 	|
-| VARBINARY 	| Vec< u8> 	|  ✓	|
-| TIMESTAMP 	| chrono::DateTime 	|  ✓	|
-| TABLE 	| voltdb_client_rust::table::VoltTable 	|  -	|
+## Data Type Mapping
 
-[voltdb]: https://github.com/VoltDB/voltdb
+| SQL Datatype | Compatible Rust Datatypes | Option Supported |
+|---|---|---|
+| TINYINT | i8/u8 | ✓ |
+| SMALLINT | i16/u16 | ✓ |
+| INTEGER | i32/u32 | ✓ |
+| BIGINT | i64/u64 | ✓ |
+| FLOAT | f64 | ✓ |
+| DECIMAL | bigdecimal::BigDecimal | ✓ |
+| GEOGRAPHY | - |  |
+| GEOGRAPHY_POINT | - |  |
+| VARCHAR | String | ✓ |
+| VARBINARY | Vec<u8> | ✓ |
+| TIMESTAMP | chrono::DateTime | ✓ |
+| TABLE | voltdb_client_rust::table::VoltTable | - |
+
+[voltdb]: https://github.com/VoltDB
 [mit-badge]: https://img.shields.io/badge/license-MIT-blue.svg
 
-## Example
+## Installation
 
+### Sync API (default)
 
 ```toml
 [dependencies]
-voltdb-client-rust = { version = "0.1"}
+voltdb-client-rust = "0.1"
 ```
-Start a voltdb:
+
+### Async API with Tokio
+
+```toml
+[dependencies]
+voltdb-client-rust = { version = "0.1", features = ["tokio"] }
 ```
-docker run  --env HOST_COUNT=1 --publish 21211:21211 --publish 8080:8080 voltdb/voltdb-community:9.2.1
+
+## Quick Start
+
+Start a VoltDB instance:
+
+```bash
+docker run --env HOST_COUNT=1 --publish 21211:21211 --publish 8080:8080 voltdb/voltdb-community:9.2.1
 ```
-Then, on your main.rs:
+
+### Sync Example
+
+```rust
+use voltdb_client_rust::*;
+
+fn main() -> Result<(), VoltError> {
+    let hosts = vec![IpPort::new("localhost".to_string(), 21211)];
+    let mut pool = Pool::new(Opts::new(hosts))?;
+    let mut conn = pool.get_conn()?;
+
+    // Execute a query
+    let mut table = conn.query("SELECT * FROM my_table")?;
+    while table.advance_row() {
+        let id: i64 = table.fetch("id")?;
+        let name: Option<String> = table.fetch("name")?;
+        println!("id: {}, name: {:?}", id, name);
+    }
+
+    // Call a stored procedure with parameters
+    let id = 1i64;
+    let name = "example".to_string();
+    let mut result = conn.call_sp("MyProcedure", volt_param![id, name])?;
+
+    Ok(())
+}
+```
+
+### Async Example (with `tokio` feature)
+
+```rust
+use voltdb_client_rust::*;
+
+#[tokio::main]
+async fn main() -> Result<(), VoltError> {
+    let hosts = vec![IpPort::new("localhost".to_string(), 21211)];
+    let pool = AsyncPool::new(Opts::new(hosts)).await?;
+    let conn = pool.get_conn();
+
+    // Execute a query
+    let mut rx = conn.query("SELECT * FROM my_table").await?;
+    let mut table = async_block_for_result(&mut rx).await?;
+    while table.advance_row() {
+        let id: i64 = table.fetch("id")?;
+        let name: Option<String> = table.fetch("name")?;
+        println!("id: {}, name: {:?}", id, name);
+    }
+
+    // Call a stored procedure with parameters
+    let id = 1i64;
+    let name = "example".to_string();
+    let mut rx = conn.call_sp("MyProcedure", volt_param![id, name]).await?;
+    let mut result = async_block_for_result(&mut rx).await?;
+
+    Ok(())
+}
+```
+
+## API Reference
+
+### Sync API
+
+| Type | Description |
+|------|-------------|
+| `Node` | Single connection to VoltDB |
+| `Pool` | Connection pool for sync operations |
+| `PooledConn` | Borrowed connection from pool |
+| `block_for_result()` | Wait for query result |
+
+### Async API (requires `tokio` feature)
+
+| Type | Description |
+|------|-------------|
+| `AsyncNode` | Single async connection to VoltDB |
+| `AsyncPool` | Connection pool for async operations |
+| `AsyncPooledConn` | Reference to connection from pool |
+| `async_block_for_result()` | Await query result |
+
+## Full Example
 
 ```rust
 use std::fs;
@@ -183,10 +279,7 @@ fn main() -> Result<(), VoltError> {
 
 More examples can be found [here][examples].
 
-
 [examples]: https://github.com/johnnywale/voltdb-client-rust/blob/master/tests/integration_test.rs
-
-
 
 ## License
 
