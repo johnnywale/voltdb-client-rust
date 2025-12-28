@@ -174,7 +174,7 @@ help:
 	@echo "  coverage-unit         - Lib + unit tests (no Docker)"
 	@echo "  coverage-unit-html    - HTML report (no Docker)"
 	@echo "  coverage-all          - All tests (requires Docker)"
-	@echo "  coverage-all-html     - HTML report (requires Docker)"
+	@echo "  wcoverage-all-html     - HTML report (requires Docker)"
 	@echo "  coverage-html         - Lib tests HTML report"
 	@echo "  coverage-lcov         - Generate LCOV format (for CI)"
 	@echo "  coverage-json         - Generate JSON format"

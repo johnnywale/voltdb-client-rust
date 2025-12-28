@@ -191,7 +191,7 @@ pub use crate::pool::*;
 pub use crate::table::*;
 
 #[cfg(feature = "tokio")]
-pub use crate::async_node::{async_block_for_result, AsyncNode};
+pub use crate::async_node::{AsyncNode, async_block_for_result};
 #[cfg(feature = "tokio")]
 pub use crate::async_pool::{AsyncPool, AsyncPooledConn};
 
@@ -200,13 +200,16 @@ macro_rules! volt_param {
     () => (
         std::vec::Vec::new()
     );
-      ( $( $x:expr ),* ) => {
+    ( $( $x:expr ),* ) => {
         {
-            let mut temp_vec = Vec::new();
-            $(
-                temp_vec.push(&$x as & dyn Value);
-            )*
-            temp_vec
+            #[allow(clippy::vec_init_then_push)]
+            {
+                let mut temp_vec = Vec::new();
+                $(
+                    temp_vec.push(&$x as &dyn Value);
+                )*
+                temp_vec
+            }
         }
     };
 }

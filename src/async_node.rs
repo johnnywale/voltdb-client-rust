@@ -1,20 +1,20 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicI64, Ordering};
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, watch, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc, watch};
 
 use crate::encode::{Value, VoltError};
 use crate::node::{ConnInfo, NodeOpt};
 use crate::procedure_invocation::new_procedure_invocation;
-use crate::protocol::{build_auth_message, parse_auth_response, PING_HANDLE};
+use crate::protocol::{PING_HANDLE, build_auth_message, parse_auth_response};
 use crate::response::VoltResponseInfo;
-use crate::table::{new_volt_table, VoltTable};
+use crate::table::{VoltTable, new_volt_table};
 use crate::volt_param;
 
 /// Async network request tracking

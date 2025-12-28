@@ -32,12 +32,12 @@ impl<'a> ProcedureInvocation<'a> {
             return self.slen;
         }
         let mut slen: i32 = 15;
-        slen = slen + self.query.len() as i32;
+        slen += self.query.len() as i32;
         for item in self.params {
-            slen = slen + item.get_write_length()
+            slen += item.get_write_length()
         }
-        self.slen = slen as i32;
-        return slen as i32;
+        self.slen = slen;
+        slen
     }
 
     pub(crate) fn bytes(&mut self) -> Vec<u8> {
@@ -51,6 +51,6 @@ impl<'a> ProcedureInvocation<'a> {
         for item in self.params.iter() {
             item.marshal(&mut buffer)
         }
-        return buffer.into_vec();
+        buffer.into_vec()
     }
 }

@@ -3,7 +3,7 @@
 //! This module contains common code for VoltDB wire protocol handling,
 //! including authentication handshake and response parsing.
 
-use std::io::{Read, Write};
+use std::io::Read;
 use std::net::Ipv4Addr;
 use std::str::from_utf8;
 
@@ -17,7 +17,7 @@ use crate::node::ConnInfo;
 pub const PROTOCOL_VERSION: u8 = 1;
 
 /// Ping handle constant - used for keep-alive messages
-pub const PING_HANDLE: i64 = 1 << 63 - 1;
+pub const PING_HANDLE: i64 = 1 << (63 - 1);
 
 /// Build authentication message for VoltDB connection.
 ///
@@ -44,7 +44,7 @@ pub fn build_auth_message(user: Option<&str>, pass: Option<&str>) -> Result<Vec<
     let password_bytes = pass.map(|p| p.as_bytes()).unwrap_or(&[]);
     let mut hasher: Sha256 = Sha256::new();
     Digest::update(&mut hasher, password_bytes);
-    buffer.write(&hasher.finalize())?;
+    buffer.write_bytes(&hasher.finalize());
 
     // Update message length
     buffer.set_wpos(0);
@@ -187,7 +187,7 @@ mod tests {
     fn test_parse_auth_response_invalid_auth() {
         // Version byte + auth status (non-zero = failure)
         let mut data = vec![1u8, 1]; // version=1, auth=1 (failed)
-                                     // Pad with enough data to avoid read errors
+        // Pad with enough data to avoid read errors
         data.extend_from_slice(&[0u8; 50]);
         let result = parse_auth_response(&data);
         assert!(matches!(result, Err(VoltError::AuthFailed)));

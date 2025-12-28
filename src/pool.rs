@@ -2,12 +2,12 @@ use std::time::SystemTime;
 use std::{
     fmt,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
-use crate::{block_for_result, node, Node, NodeOpt, Opts, Value, VoltError, VoltTable};
+use crate::{Node, NodeOpt, Opts, Value, VoltError, VoltTable, block_for_result, node};
 
 #[derive(Debug)]
 struct InnerPool {
@@ -17,18 +17,18 @@ struct InnerPool {
 
 impl InnerPool {
     pub fn node_sizes(&self) -> usize {
-        return self.opts.0.ip_ports.len();
+        self.opts.0.ip_ports.len()
     }
 
     fn to_node_opt(&self, i: usize) -> NodeOpt {
-        return NodeOpt {
+        NodeOpt {
             ip_port: self.opts.0.ip_ports.get(i).cloned().unwrap(),
             pass: self.opts.0.pass.clone(),
             user: self.opts.0.user.clone(),
-        };
+        }
     }
     fn get_node(&mut self, idx: usize) -> &mut Node {
-        return self.pool.get_mut(idx).unwrap();
+        self.pool.get_mut(idx).unwrap()
     }
     fn new(size: usize, opts: Opts) -> Result<InnerPool, VoltError> {
         let mut pool = InnerPool {
@@ -89,7 +89,7 @@ impl Pool {
         Ok(Pool {
             inner_pool: pool,
             size,
-            total: Arc::new(AtomicUsize::from(0 as usize)),
+            total: Arc::new(AtomicUsize::from(0_usize)),
         })
     }
 
@@ -114,15 +114,15 @@ impl<'a> Drop for PooledConn<'a> {
 
 impl<'a> PooledConn<'a> {
     pub fn query(&mut self, sql: &str) -> Result<VoltTable, VoltError> {
-        return block_for_result(&self.conn.query(sql)?);
+        block_for_result(&self.conn.query(sql)?)
     }
     pub fn list_procedures(&mut self) -> Result<VoltTable, VoltError> {
-        return block_for_result(&self.conn.list_procedures()?);
+        block_for_result(&self.conn.list_procedures()?)
     }
     pub fn call_sp(&mut self, query: &str, param: Vec<&dyn Value>) -> Result<VoltTable, VoltError> {
-        return block_for_result(&self.conn.call_sp(query, param)?);
+        block_for_result(&self.conn.call_sp(query, param)?)
     }
     pub fn upload_jar(&mut self, bs: Vec<u8>) -> Result<VoltTable, VoltError> {
-        return block_for_result(&self.conn.upload_jar(bs)?);
+        block_for_result(&self.conn.upload_jar(bs)?)
     }
 }

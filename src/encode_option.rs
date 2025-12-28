@@ -6,7 +6,7 @@ use crate::*;
 
 impl Value for Option<bool> {
     fn get_write_length(&self) -> i32 {
-        return 2;
+        2
     }
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
@@ -22,20 +22,20 @@ impl Value for Option<bool> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs == NULL_BIT_VALUE {
             return Ok(Option::None);
         }
-        return Ok(Some(bool::from_bytes(bs, _column)?));
+        Ok(Some(bool::from_bytes(bs, _column)?))
     }
 }
 
 impl Value for Option<BigDecimal> {
     fn get_write_length(&self) -> i32 {
-        return 17;
+        17
     }
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
@@ -51,7 +51,7 @@ impl Value for Option<BigDecimal> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError>
@@ -67,7 +67,7 @@ impl Value for Option<BigDecimal> {
 
 impl Value for Option<i8> {
     fn get_write_length(&self) -> i32 {
-        return 2;
+        2
     }
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
@@ -83,20 +83,20 @@ impl Value for Option<i8> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs == NULL_BIT_VALUE {
             return Ok(Option::None);
         }
-        return Ok(Some(i8::from_bytes(bs, _column)?));
+        Ok(Some(i8::from_bytes(bs, _column)?))
     }
 }
 
 impl Value for Option<u8> {
     fn get_write_length(&self) -> i32 {
-        return 2;
+        2
     }
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
@@ -112,20 +112,20 @@ impl Value for Option<u8> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs == NULL_BIT_VALUE {
             return Ok(Option::None);
         }
-        return Ok(Some(u8::from_bytes(bs, _column)?));
+        Ok(Some(u8::from_bytes(bs, _column)?))
     }
 }
 
 impl Value for Option<i16> {
     fn get_write_length(&self) -> i32 {
-        return 3;
+        3
     }
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
@@ -141,20 +141,20 @@ impl Value for Option<i16> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs == NULL_SHORT_VALUE {
             return Ok(Option::None);
         }
-        return Ok(Some(i16::from_bytes(bs, _column)?));
+        Ok(Some(i16::from_bytes(bs, _column)?))
     }
 }
 
 impl Value for Option<u16> {
     fn get_write_length(&self) -> i32 {
-        return 3;
+        3
     }
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
@@ -170,20 +170,20 @@ impl Value for Option<u16> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs == NULL_SHORT_VALUE {
             return Ok(Option::None);
         }
-        return Ok(Some(u16::from_bytes(bs, _column)?));
+        Ok(Some(u16::from_bytes(bs, _column)?))
     }
 }
 
 impl Value for Option<i32> {
     fn get_write_length(&self) -> i32 {
-        return 5;
+        5
     }
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
@@ -199,20 +199,20 @@ impl Value for Option<i32> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs == NULL_INT_VALUE {
             return Ok(Option::None);
         }
-        return Ok(Some(i32::from_bytes(bs, _column)?));
+        Ok(Some(i32::from_bytes(bs, _column)?))
     }
 }
 
 impl Value for Option<u32> {
     fn get_write_length(&self) -> i32 {
-        return 5;
+        5
     }
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
@@ -228,20 +228,20 @@ impl Value for Option<u32> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs == NULL_INT_VALUE {
             return Ok(Option::None);
         }
-        return Ok(Some(u32::from_bytes(bs, _column)?));
+        Ok(Some(u32::from_bytes(bs, _column)?))
     }
 }
 
 impl Value for Option<i64> {
     fn get_write_length(&self) -> i32 {
-        return 9;
+        9
     }
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
         bytebuffer.write_i8(LONG_COLUMN);
@@ -256,20 +256,20 @@ impl Value for Option<i64> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs == NULL_LONG_VALUE {
             return Ok(Option::None);
         }
-        return Ok(Some(i64::from_bytes(bs, _column)?));
+        Ok(Some(i64::from_bytes(bs, _column)?))
     }
 }
 
 impl Value for Option<u64> {
     fn get_write_length(&self) -> i32 {
-        return 9;
+        9
     }
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
@@ -285,20 +285,20 @@ impl Value for Option<u64> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs == NULL_LONG_VALUE {
             return Ok(Option::None);
         }
-        return Ok(Some(u64::from_bytes(bs, _column)?));
+        Ok(Some(u64::from_bytes(bs, _column)?))
     }
 }
 
 impl Value for Option<f64> {
     fn get_write_length(&self) -> i32 {
-        return 9;
+        9
     }
 
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
@@ -314,26 +314,22 @@ impl Value for Option<f64> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
         if bs == NULL_FLOAT_VALUE {
             return Ok(Option::None);
         }
-        return Ok(Some(f64::from_bytes(bs, _column)?));
+        Ok(Some(f64::from_bytes(bs, _column)?))
     }
 }
 
 impl Value for Option<String> {
     fn get_write_length(&self) -> i32 {
         match self {
-            None => {
-                return 5;
-            }
-            Some(v) => {
-                return (5 + v.len()) as i32;
-            }
+            None => 5,
+            Some(v) => (5 + v.len()) as i32,
         }
     }
 
@@ -353,11 +349,11 @@ impl Value for Option<String> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, table_column: &Column) -> Result<Self, VoltError> {
-        return match table_column.header_type {
+        match table_column.header_type {
             STRING_COLUMN => {
                 if bs == NULL_VARCHAR {
                     return Ok(Option::None);
@@ -372,19 +368,15 @@ impl Value for Option<String> {
                     None => Ok(Option::None),
                 }
             }
-        };
+        }
     }
 }
 
 impl Value for Option<&str> {
     fn get_write_length(&self) -> i32 {
         match self {
-            None => {
-                return 5;
-            }
-            Some(v) => {
-                return (5 + v.len()) as i32;
-            }
+            None => 5,
+            Some(v) => (5 + v.len()) as i32,
         }
     }
 
@@ -404,7 +396,7 @@ impl Value for Option<&str> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(_bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
@@ -415,12 +407,8 @@ impl Value for Option<&str> {
 impl Value for Option<Vec<u8>> {
     fn get_write_length(&self) -> i32 {
         match self {
-            None => {
-                return 5;
-            }
-            Some(v) => {
-                return (5 + v.len()) as i32;
-            }
+            None => 5,
+            Some(v) => (5 + v.len()) as i32,
         }
     }
 
@@ -429,7 +417,7 @@ impl Value for Option<Vec<u8>> {
         match self {
             None => bytebuffer.write_bytes(&NULL_VARCHAR),
             Some(v) => {
-                bytebuffer.write_bytes(&v);
+                bytebuffer.write_bytes(v);
             }
         }
     }
@@ -438,13 +426,13 @@ impl Value for Option<Vec<u8>> {
         match self {
             None => bytebuffer.write_bytes(&NULL_VARCHAR),
             Some(v) => {
-                bytebuffer.write_bytes(&v);
+                bytebuffer.write_bytes(v);
             }
         }
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
@@ -454,13 +442,13 @@ impl Value for Option<Vec<u8>> {
         }
         let mut cp = bs.clone();
         cp.drain(0..4);
-        return Ok(Option::Some(cp));
+        Ok(Option::Some(cp))
     }
 }
 
 impl Value for Option<DateTime<Utc>> {
     fn get_write_length(&self) -> i32 {
-        return 9;
+        9
     }
     fn marshal(&self, bytebuffer: &mut ByteBuffer) {
         bytebuffer.write_i8(TIMESTAMP_COLUMN);
@@ -478,7 +466,7 @@ impl Value for Option<DateTime<Utc>> {
     }
 
     fn to_value_string(&self) -> String {
-        return format!("{:?}", self);
+        format!("{:?}", self)
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError>
@@ -488,7 +476,7 @@ impl Value for Option<DateTime<Utc>> {
         if bs == NULL_TIMESTAMP {
             return Ok(Option::None);
         }
-        return Ok(Option::Some(DateTime::from_bytes(bs, _column)?));
+        Ok(Option::Some(DateTime::from_bytes(bs, _column)?))
     }
 }
 

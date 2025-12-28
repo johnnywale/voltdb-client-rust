@@ -62,7 +62,7 @@ fn main() -> Result<(), VoltError> {
         let test: Test = table.map_row();
         println!("{:?}", test);
     }
-    let bs = vec![1 as u8, 2, 3, 4];
+    let bs = vec![1_u8, 2, 3, 4];
     let time = DateTime::from(SystemTime::now());
     let none_i16: Option<i16> = Option::None;
 
@@ -127,7 +127,7 @@ fn main() -> Result<(), VoltError> {
     }
 
     let null_i16: Option<i16> = Option::None;
-    let header = vec!["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9"];
+    let header = ["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9"];
     let tp = vec![
         TINYINT_COLUMN,
         SHORT_COLUMN,
@@ -145,12 +145,12 @@ fn main() -> Result<(), VoltError> {
         .collect::<Vec<String>>();
     let mut table = VoltTable::new_table(tp, header);
     let decimal = BigDecimal::from(16);
-    let data = volt_param! {true, null_i16 , 2147483647 as i32,  9223372036854775807 as i64 ,  15.0, decimal  , "17",bs, time   };
+    let data = volt_param! {true, null_i16 , 2147483647_i32,  9223372036854775807_i64 ,  15.0, decimal  , "17",bs, time   };
     table.add_row(data)?;
     // call proc with volt table
     let mut res = node.call_sp("ApplicationCreate", volt_param![table])?;
     while res.advance_row() {
         println!("{:?}", res.debug_row());
     }
-    Ok({})
+    Ok(())
 }

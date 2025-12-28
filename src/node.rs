@@ -5,7 +5,7 @@ use std::net::{Ipv4Addr, Shutdown, TcpStream};
 use std::str::FromStr;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock, mpsc};
 use std::thread;
 use std::time::Duration;
 
@@ -14,9 +14,9 @@ use byteorder::{BigEndian, ReadBytesExt};
 
 use crate::encode::{Value, VoltError};
 use crate::procedure_invocation::new_procedure_invocation;
-use crate::protocol::{build_auth_message, parse_auth_response, PING_HANDLE};
+use crate::protocol::{PING_HANDLE, build_auth_message, parse_auth_response};
 use crate::response::VoltResponseInfo;
-use crate::table::{new_volt_table, VoltTable};
+use crate::table::{VoltTable, new_volt_table};
 use crate::volt_param;
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -30,7 +30,7 @@ pub struct IpPort {
 
 impl IpPort {
     pub fn new(ip_host: String, port: u16) -> Self {
-        return IpPort { ip_host, port };
+        IpPort { ip_host, port }
     }
 }
 
@@ -166,7 +166,7 @@ pub struct Node {
 
 impl Debug for Node {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        return write!(f, "Pending request: {}", 1);
+        write!(f, "Pending request: {}", 1)
     }
 }
 
@@ -221,8 +221,8 @@ impl Node {
     pub fn get_sequence(&self) -> i64 {
         let lock = self.counter.lock();
         let seq = lock.unwrap();
-        let i = seq.fetch_add(1, Ordering::Relaxed);
-        return i;
+
+        seq.fetch_add(1, Ordering::Relaxed)
     }
 
     pub fn list_procedures(&mut self) -> Result<Receiver<VoltTable>, VoltError> {
@@ -253,10 +253,10 @@ impl Node {
                 return Err(VoltError::ConnectionNotAvailable);
             }
             Some(stream) => {
-                stream.write_all(&*bs)?;
+                stream.write_all(&bs)?;
             }
         }
-        return Ok(rx);
+        Ok(rx)
     }
 
     pub fn upload_jar(&mut self, bs: Vec<u8>) -> Result<Receiver<VoltTable>, VoltError> {
@@ -264,9 +264,8 @@ impl Node {
     }
     /// Use `@AdHoc` proc to query .
     pub fn query(&mut self, sql: &str) -> Result<Receiver<VoltTable>, VoltError> {
-        let mut zero_vec: Vec<&dyn Value> = Vec::new();
-        zero_vec.push(&sql);
-        return Ok(self.call_sp("@AdHoc", zero_vec)?);
+        let zero_vec: Vec<&dyn Value> = vec![&sql];
+        self.call_sp("@AdHoc", zero_vec)
     }
 
     pub fn ping(&mut self) -> Result<(), VoltError> {
@@ -279,10 +278,10 @@ impl Node {
                 return Err(VoltError::ConnectionNotAvailable);
             }
             Some(stream) => {
-                stream.write_all(&*bs)?;
+                stream.write_all(&bs)?;
             }
         }
-        Ok({})
+        Ok(())
     }
 
     fn job(
@@ -295,11 +294,11 @@ impl Node {
                 if read > 0 {
                     let mut all = vec![0; read as usize];
                     tcp.read_exact(&mut all)?;
-                    let mut res = ByteBuffer::from_bytes(&*all);
+                    let mut res = ByteBuffer::from_bytes(&all);
                     let _ = res.read_u8()?;
                     let handle = res.read_i64()?;
                     if handle == PING_HANDLE {
-                        return Ok({});
+                        return Ok(());
                     }
                     if let Some(t) = requests.write()?.remove(&handle) {
                         let info = VoltResponseInfo::new(&mut res, handle)?;
@@ -313,7 +312,7 @@ impl Node {
                 return Err(VoltError::Io(e));
             }
         }
-        Ok({})
+        Ok(())
     }
     pub fn shutdown(&mut self) -> Result<(), VoltError> {
         let mut stop = self.stop.lock().unwrap();
@@ -326,28 +325,30 @@ impl Node {
             }
         }
         self.tcp_stream = Box::new(Option::None);
-        return Ok({});
+        Ok(())
     }
     /// Listen on new message come in .
     fn listen(&mut self) -> Result<(), VoltError> {
         let requests = Arc::clone(&self.requests);
 
         let res = self.tcp_stream.as_mut();
-        return match res {
+        match res {
             None => Ok(()),
             Some(res) => {
                 let tcp = res.try_clone()?;
                 let stopping = Arc::clone(&self.stop);
-                thread::spawn(move || loop {
-                    if *stopping.lock().unwrap() {
-                        break;
-                    } else {
-                        let res = crate::node::Node::job(&tcp, &requests);
-                        match res {
-                            Ok(_) => {}
-                            Err(err) => {
-                                if !*stopping.lock().unwrap() {
-                                    eprintln!("{} ", err)
+                thread::spawn(move || {
+                    loop {
+                        if *stopping.lock().unwrap() {
+                            break;
+                        } else {
+                            let res = crate::node::Node::job(&tcp, &requests);
+                            match res {
+                                Ok(_) => {}
+                                Err(err) => {
+                                    if !*stopping.lock().unwrap() {
+                                        eprintln!("{} ", err)
+                                    }
                                 }
                             }
                         }
@@ -355,7 +356,7 @@ impl Node {
                 });
                 Ok(())
             }
-        };
+        }
     }
 }
 
@@ -371,10 +372,10 @@ pub struct ConnInfo {
 pub fn block_for_result(res: &Receiver<VoltTable>) -> Result<VoltTable, VoltError> {
     let mut table = res.recv()?;
     let err = table.has_error();
-    return match err {
+    match err {
         None => Ok(table),
         Some(err) => Err(err),
-    };
+    }
 }
 
 pub fn reset() {}
@@ -382,7 +383,7 @@ pub fn reset() {}
 /// Create new connection to server .
 pub fn get_node(addr: &str) -> Result<Node, VoltError> {
     let url = addr.split(":").collect::<Vec<&str>>();
-    let host = url.get(0).unwrap().to_string();
+    let host = url.first().unwrap().to_string();
     let port = u16::from_str(url.get(1).unwrap()).unwrap();
     let ip_port = IpPort::new(host, port);
     let opt = NodeOpt {
@@ -390,7 +391,7 @@ pub fn get_node(addr: &str) -> Result<Node, VoltError> {
         user: None,
         pass: None,
     };
-    return Node::new(opt);
+    Node::new(opt)
 }
 
 #[cfg(test)]

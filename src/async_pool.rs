@@ -1,9 +1,9 @@
 use std::fmt;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::SystemTime;
 
-use crate::async_node::{async_block_for_result, AsyncNode};
+use crate::async_node::{AsyncNode, async_block_for_result};
 use crate::node::{NodeOpt, Opts};
 use crate::{Value, VoltError, VoltTable};
 

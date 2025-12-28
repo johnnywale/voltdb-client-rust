@@ -1,7 +1,7 @@
 [package]
 name = "voltdb-client-rust"
 version = "0.1.12"
-edition = "2021"
+edition = "2024"
 authors = ["johnnywale <johnnywalee@gmail.com>"]
 license = "MIT"
 readme = "README.md"
