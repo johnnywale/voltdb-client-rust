@@ -1,14 +1,10 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
-use std::io::{Read, Write};
-use std::net::Ipv4Addr;
-use std::str::from_utf8;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
 use bytebuffer::ByteBuffer;
 use byteorder::{BigEndian, ByteOrder};
-use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
@@ -16,11 +12,10 @@ use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use crate::encode::{Value, VoltError};
 use crate::node::{ConnInfo, NodeOpt};
 use crate::procedure_invocation::new_procedure_invocation;
+use crate::protocol::{build_auth_message, parse_auth_response, PING_HANDLE};
 use crate::response::VoltResponseInfo;
 use crate::table::{new_volt_table, VoltTable};
 use crate::volt_param;
-
-const PING_HANDLE: i64 = 1 << 63 - 1;
 
 /// Async network request tracking
 #[derive(Debug)]
@@ -58,47 +53,14 @@ impl AsyncNode {
         let ip_host = &opt.ip_port;
         let addr = format!("{}:{}", ip_host.ip_host, ip_host.port);
 
-        // Build auth message
-        let mut buffer = ByteBuffer::new();
-        let result = [1; 1];
-        buffer.write_u32(0);
-        buffer.write_bytes(&result);
-        buffer.write_bytes(&result);
-        buffer.write_string("database");
-
-        match &opt.user {
-            None => {
-                buffer.write_string("");
-            }
-            Some(user) => {
-                buffer.write_string(user.as_str());
-            }
-        }
-
-        match &opt.pass {
-            None => {
-                let password = [];
-                let mut hasher: Sha256 = Sha256::new();
-                Digest::update(&mut hasher, password);
-                buffer.write(&hasher.finalize())?;
-            }
-            Some(password) => {
-                let password = password.as_bytes();
-                let mut hasher: Sha256 = Sha256::new();
-                Digest::update(&mut hasher, password);
-                buffer.write(&hasher.finalize())?;
-            }
-        }
-
-        buffer.set_wpos(0);
-        buffer.write_u32((buffer.len() - 4) as u32);
-        let bs = buffer.into_vec();
+        // Build auth message using shared protocol code
+        let auth_msg = build_auth_message(opt.user.as_deref(), opt.pass.as_deref())?;
 
         // Async connect
         let mut stream = TcpStream::connect(&addr).await?;
 
         // Async write auth request
-        stream.write_all(&bs).await?;
+        stream.write_all(&auth_msg).await?;
         stream.flush().await?;
 
         // Async read auth response
@@ -109,32 +71,8 @@ impl AsyncNode {
         let mut all = vec![0; read];
         stream.read_exact(&mut all).await?;
 
-        // Parse auth response
-        let mut res = ByteBuffer::from_bytes(&all);
-        let _version = res.read_u8()?;
-        let auth = res.read_u8()?;
-        if auth != 0 {
-            return Err(VoltError::AuthFailed);
-        }
-
-        let host_id = res.read_i32()?;
-        let connection = res.read_i64()?;
-        let _ = res.read_i64()?;
-        let leader = res.read_i32()?;
-        let bs = (leader as u32).to_be_bytes();
-        let leader_addr = Ipv4Addr::from(bs);
-
-        let length = res.read_i32()?;
-        let mut build = vec![0; length as usize];
-        res.read_exact(&mut build)?;
-        let b = from_utf8(&build)?;
-
-        let info = ConnInfo {
-            host_id,
-            connection,
-            leader_addr,
-            build: String::from(b),
-        };
+        // Parse auth response using shared protocol code
+        let info = parse_auth_response(&all)?;
 
         // Split stream for concurrent read/write
         let (read_half, write_half) = tokio::io::split(stream);
@@ -164,7 +102,8 @@ impl AsyncNode {
 
     /// List all stored procedures
     pub async fn list_procedures(&self) -> Result<mpsc::Receiver<VoltTable>, VoltError> {
-        self.call_sp("@SystemCatalog", volt_param!("PROCEDURES")).await
+        self.call_sp("@SystemCatalog", volt_param!("PROCEDURES"))
+            .await
     }
 
     /// Call a stored procedure with parameters

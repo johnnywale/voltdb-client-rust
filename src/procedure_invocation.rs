@@ -11,7 +11,12 @@ pub(crate) struct ProcedureInvocation<'a> {
     pub(crate) slen: i32, // length of pi once serialized
 }
 
-pub(crate) fn new_procedure_invocation<'a>(handle: i64, is_query: bool, params: &'a Vec<&dyn Value>, query: &str) -> ProcedureInvocation<'a> {
+pub(crate) fn new_procedure_invocation<'a>(
+    handle: i64,
+    is_query: bool,
+    params: &'a Vec<&dyn Value>,
+    query: &str,
+) -> ProcedureInvocation<'a> {
     ProcedureInvocation {
         handle,
         is_query,

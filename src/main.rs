@@ -54,7 +54,9 @@ fn main() -> Result<(), VoltError> {
     node.query(insert)?;
     // Insert min/max value to table to validate the encoding.
     node.query("insert into test_types (T1,T2,T3,T4) values (1, -32767, -2147483647, -9223372036854775807 );")?;
-    node.query("insert into test_types (T1,T2,T3,T4) values (1, 32767, 2147483647, 9223372036854775807 );")?;
+    node.query(
+        "insert into test_types (T1,T2,T3,T4) values (1, 32767, 2147483647, 9223372036854775807 );",
+    )?;
     let mut table = node.query("select * from test_types")?;
     while table.advance_row() {
         let test: Test = table.map_row();
@@ -64,9 +66,11 @@ fn main() -> Result<(), VoltError> {
     let time = DateTime::from(SystemTime::now());
     let none_i16: Option<i16> = Option::None;
 
-
     // call sp with marco `volt_parma!` , test_types.insert is crated with table.
-    let mut table = node.call_sp("test_types.insert", volt_param![1,none_i16,3,4,5,6,"7",bs,time])?;
+    let mut table = node.call_sp(
+        "test_types.insert",
+        volt_param![1, none_i16, 3, 4, 5, 6, "7", bs, time],
+    )?;
     while table.advance_row() {
         println!("{}", table.debug_row());
     }
@@ -122,11 +126,23 @@ fn main() -> Result<(), VoltError> {
         node.query(script)?;
     }
 
-
     let null_i16: Option<i16> = Option::None;
     let header = vec!["T1", "T2", "T3", "T4", "T5", "T6", "T7", "T8", "T9"];
-    let tp = vec![TINYINT_COLUMN, SHORT_COLUMN, INT_COLUMN, LONG_COLUMN, FLOAT_COLUMN, DECIMAL_COLUMN, STRING_COLUMN, VAR_BIN_COLUMN, TIMESTAMP_COLUMN];
-    let header: Vec<String> = header.iter().map(|f| f.to_string()).collect::<Vec<String>>();
+    let tp = vec![
+        TINYINT_COLUMN,
+        SHORT_COLUMN,
+        INT_COLUMN,
+        LONG_COLUMN,
+        FLOAT_COLUMN,
+        DECIMAL_COLUMN,
+        STRING_COLUMN,
+        VAR_BIN_COLUMN,
+        TIMESTAMP_COLUMN,
+    ];
+    let header: Vec<String> = header
+        .iter()
+        .map(|f| f.to_string())
+        .collect::<Vec<String>>();
     let mut table = VoltTable::new_table(tp, header);
     let decimal = BigDecimal::from(16);
     let data = volt_param! {true, null_i16 , 2147483647 as i32,  9223372036854775807 as i64 ,  15.0, decimal  , "17",bs, time   };

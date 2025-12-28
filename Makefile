@@ -1,4 +1,6 @@
-.PHONY: build release test test-unit test-async test-all check fix clean docker-run docker-stop
+.PHONY: build release test test-unit test-async test-all check fix clean docker-run docker-stop \
+        coverage coverage-html coverage-lcov coverage-json coverage-tarpaulin coverage-tarpaulin-xml \
+        coverage-tarpaulin-lcov install-coverage-tools
 
 # Build targets
 build:
@@ -57,6 +59,62 @@ clippy:
 	cargo clippy
 	cargo clippy --features tokio
 
+# Coverage (requires cargo-llvm-cov or cargo-tarpaulin)
+# Install: cargo install cargo-llvm-cov
+# Or: cargo install cargo-tarpaulin (Linux only)
+
+# Basic coverage - lib tests only (no Docker needed)
+coverage:
+	cargo llvm-cov --lib --features tokio
+
+# Coverage with unit tests (no Docker needed)
+coverage-unit:
+	cargo llvm-cov --features tokio --lib --test unit_test
+
+coverage-unit-html:
+	cargo llvm-cov --features tokio --lib --test unit_test --html
+	@echo "Coverage report: target/llvm-cov/html/index.html"
+
+# Full coverage - all tests (requires Docker)
+coverage-all:
+	cargo llvm-cov --features tokio --lib --test unit_test --test integration_test --test pool_test --test async_test
+
+coverage-all-html:
+	cargo llvm-cov --features tokio --lib --test unit_test --test integration_test --test pool_test --test async_test --html
+	@echo "Coverage report: target/llvm-cov/html/index.html"
+
+coverage-html:
+	cargo llvm-cov --lib --features tokio --html
+	@echo "Coverage report: target/llvm-cov/html/index.html"
+
+coverage-lcov:
+	cargo llvm-cov --lib --features tokio --lcov --output-path target/lcov.info
+
+coverage-json:
+	cargo llvm-cov --lib --features tokio --json --output-path target/coverage.json
+
+# Tarpaulin (Linux only, often used in CI)
+coverage-tarpaulin:
+	cargo tarpaulin --features tokio --out Html --output-dir target/tarpaulin -- --test-threads=1
+	@echo "Coverage report: target/tarpaulin/tarpaulin-report.html"
+
+coverage-tarpaulin-xml:
+	cargo tarpaulin --features tokio --out Xml --output-dir target/tarpaulin -- --test-threads=1
+
+coverage-tarpaulin-lcov:
+	cargo tarpaulin --features tokio --out Lcov --output-dir target/tarpaulin -- --test-threads=1
+
+# Coverage without Docker (lib + unit tests only)
+coverage-tarpaulin-no-docker:
+	cargo tarpaulin --lib --features tokio --test unit_test --out Html --output-dir target/tarpaulin
+	@echo "Coverage report: target/tarpaulin/tarpaulin-report.html"
+
+# Install coverage tools
+install-coverage-tools:
+	cargo install cargo-llvm-cov
+	@echo "Note: cargo-tarpaulin only works on Linux"
+	@echo "On Linux, also run: cargo install cargo-tarpaulin"
+
 # Clean
 clean:
 	cargo clean
@@ -110,6 +168,19 @@ help:
 	@echo "  test-pool        - Run pool tests (requires Docker)"
 	@echo "  test-all         - Run all tests with tokio feature"
 	@echo "  test-all-no-docker - Run tests that don't need Docker"
+	@echo ""
+	@echo "Coverage (install: cargo install cargo-llvm-cov):"
+	@echo "  coverage              - Lib tests only (no Docker)"
+	@echo "  coverage-unit         - Lib + unit tests (no Docker)"
+	@echo "  coverage-unit-html    - HTML report (no Docker)"
+	@echo "  coverage-all          - All tests (requires Docker)"
+	@echo "  coverage-all-html     - HTML report (requires Docker)"
+	@echo "  coverage-html         - Lib tests HTML report"
+	@echo "  coverage-lcov         - Generate LCOV format (for CI)"
+	@echo "  coverage-json         - Generate JSON format"
+	@echo "  coverage-tarpaulin    - Use tarpaulin (Linux, requires Docker)"
+	@echo "  coverage-tarpaulin-no-docker - Tarpaulin without Docker"
+	@echo "  install-coverage-tools - Install coverage tools"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  check            - Check code compiles"

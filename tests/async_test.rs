@@ -9,7 +9,9 @@ use voltdb_client_rust::*;
 #[tokio::test]
 async fn test_async_node() -> Result<(), VoltError> {
     let voltdb = GenericImage::new("basvanbeek/voltdb-community", "9.2.1")
-        .with_wait_for(WaitFor::message_on_stdout("Server completed initialization."))
+        .with_wait_for(WaitFor::message_on_stdout(
+            "Server completed initialization.",
+        ))
         .with_env_var("HOST_COUNT", "1");
     let docker = voltdb.start().await.unwrap();
     let host_port = docker.get_host_port_ipv4(21211).await.unwrap();
@@ -34,7 +36,9 @@ async fn test_async_node() -> Result<(), VoltError> {
 #[tokio::test]
 async fn test_async_pool() -> Result<(), VoltError> {
     let voltdb = GenericImage::new("basvanbeek/voltdb-community", "9.2.1")
-        .with_wait_for(WaitFor::message_on_stdout("Server completed initialization."))
+        .with_wait_for(WaitFor::message_on_stdout(
+            "Server completed initialization.",
+        ))
         .with_env_var("HOST_COUNT", "1");
     let docker = voltdb.start().await.unwrap();
     let host_port = docker.get_host_port_ipv4(21211).await.unwrap();
@@ -52,7 +56,9 @@ async fn test_async_pool() -> Result<(), VoltError> {
 #[tokio::test]
 async fn test_async_pool_multiple_queries() -> Result<(), VoltError> {
     let voltdb = GenericImage::new("basvanbeek/voltdb-community", "9.2.1")
-        .with_wait_for(WaitFor::message_on_stdout("Server completed initialization."))
+        .with_wait_for(WaitFor::message_on_stdout(
+            "Server completed initialization.",
+        ))
         .with_env_var("HOST_COUNT", "1");
     let docker = voltdb.start().await.unwrap();
     let host_port = docker.get_host_port_ipv4(21211).await.unwrap();

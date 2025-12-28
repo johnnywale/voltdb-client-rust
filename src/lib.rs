@@ -161,32 +161,37 @@
 #![crate_type = "rlib"]
 #![crate_type = "dylib"]
 
-pub mod table;
-pub mod node;
 pub mod encode;
-mod procedure_invocation;
-mod response;
-mod generate;
-mod pool;
 mod encode_option;
+pub mod error;
+mod generate;
+pub mod node;
+mod pool;
+mod procedure_invocation;
+pub mod protocol;
+mod response;
+pub mod table;
 
 #[cfg(feature = "tokio")]
 pub mod async_node;
 #[cfg(feature = "tokio")]
 pub mod async_pool;
 
-pub use chrono;
 pub use bigdecimal;
+pub use chrono;
 
-pub use crate::node::{*};
-pub use crate::table::{*};
-pub use crate::encode::{*};
-pub use crate::pool::{*};
 pub use crate::bigdecimal::BigDecimal;
 pub use crate::chrono::{DateTime, Utc};
+pub use crate::encode::*;
+pub use crate::error::{
+    ConcurrencyError, ConnectionError, IntoVoltError, ProtocolError, QueryError,
+};
+pub use crate::node::{OptsBuilder, *};
+pub use crate::pool::*;
+pub use crate::table::*;
 
 #[cfg(feature = "tokio")]
-pub use crate::async_node::{AsyncNode, async_block_for_result};
+pub use crate::async_node::{async_block_for_result, AsyncNode};
 #[cfg(feature = "tokio")]
 pub use crate::async_pool::{AsyncPool, AsyncPooledConn};
 

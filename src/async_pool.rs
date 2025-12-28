@@ -121,7 +121,11 @@ impl AsyncPooledConn {
     }
 
     /// Call a stored procedure with parameters
-    pub async fn call_sp(&self, query: &str, param: Vec<&dyn Value>) -> Result<VoltTable, VoltError> {
+    pub async fn call_sp(
+        &self,
+        query: &str,
+        param: Vec<&dyn Value>,
+    ) -> Result<VoltTable, VoltError> {
         let mut rx = self.conn.call_sp(query, param).await?;
         async_block_for_result(&mut rx).await
     }

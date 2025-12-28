@@ -2,15 +2,15 @@ use std::fmt::Debug;
 use std::str::Utf8Error;
 use std::sync::PoisonError;
 
-use bigdecimal::BigDecimal;
 use bigdecimal::num_bigint::BigInt;
+use bigdecimal::BigDecimal;
 use bytebuffer::ByteBuffer;
 use chrono::{DateTime, Utc};
 use quick_error::quick_error;
 
 use crate::chrono::TimeZone;
-use crate::Column;
 use crate::response::VoltResponseInfo;
+use crate::Column;
 
 #[allow(dead_code)]
 pub const ARRAY_COLUMN: i8 = -99;
@@ -26,7 +26,6 @@ pub const TABLE: i8 = 21;
 pub const DECIMAL_COLUMN: i8 = 22;
 pub const VAR_BIN_COLUMN: i8 = 25; // varbinary (int)(bytes)
 
-
 pub const NULL_DECIMAL: [u8; 16] = [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 pub const NULL_BIT_VALUE: [u8; 1] = [128];
@@ -35,10 +34,8 @@ pub const NULL_INT_VALUE: [u8; 4] = [128, 0, 0, 0];
 pub const NULL_LONG_VALUE: [u8; 8] = [128, 0, 0, 0, 0, 0, 0, 0];
 pub const NULL_TIMESTAMP: [u8; 8] = [128, 0, 0, 0, 0, 0, 0, 0];
 
-
 pub const NULL_FLOAT_VALUE: [u8; 8] = [255, 239, 255, 255, 255, 255, 255, 255];
 pub const NULL_VARCHAR: [u8; 4] = [255, 255, 255, 255];
-
 
 quick_error! {
 #[derive(Debug)]
@@ -90,12 +87,17 @@ pub enum VoltError {
         ConnectionNotAvailable {
              display("Connection lost")
         }
-       InvalidConfig {
+        InvalidConfig {
              display("Invalid Config")
         }
-        Timeout
-
-
+        Timeout {
+             display("Operation timeout")
+        }
+        /// Returned when a non-Option type encounters a NULL value.
+        /// Use Option<T> if the column may contain NULL values.
+        UnexpectedNull(column: String) {
+            display("Unexpected NULL value in column '{}'. Use Option<T> for nullable columns.", column)
+        }
 }}
 
 impl<T> From<PoisonError<T>> for VoltError {
@@ -112,9 +114,10 @@ pub trait Value: Debug {
     fn marshal(&self, bytebuffer: &mut ByteBuffer);
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8);
     fn to_value_string(&self) -> String;
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized;
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError>
+    where
+        Self: Sized;
 }
-
 
 trait WriteBool {
     fn write_bool(&mut self, val: bool);
@@ -129,7 +132,6 @@ impl WriteBool for ByteBuffer {
         }
     }
 }
-
 
 impl Value for bool {
     fn get_write_length(&self) -> i32 {
@@ -157,7 +159,6 @@ impl Value for bool {
     }
 }
 
-
 impl Value for BigDecimal {
     fn get_write_length(&self) -> i32 {
         return 17;
@@ -183,10 +184,16 @@ impl Value for BigDecimal {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized {
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError>
+    where
+        Self: Sized,
+    {
+        if bs == NULL_DECIMAL {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let int = BigInt::from_signed_bytes_be(&*bs);
         let decimal = BigDecimal::new(int, 12);
-        return Ok(decimal);
+        Ok(decimal)
     }
 }
 
@@ -201,7 +208,6 @@ impl Value for i8 {
     }
 
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
-        //   bytebuffer.write_i8(0);
         bytebuffer.write_i8(*self);
     }
 
@@ -210,9 +216,12 @@ impl Value for i8 {
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs == NULL_BIT_VALUE {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i8()?;
-        return Ok(value);
+        Ok(value)
     }
 }
 
@@ -227,7 +236,6 @@ impl Value for u8 {
     }
 
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
-        //  bytebuffer.write_u8(0);
         bytebuffer.write_u8(*self);
     }
 
@@ -236,9 +244,12 @@ impl Value for u8 {
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs == NULL_BIT_VALUE {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u8()?;
-        return Ok(value);
+        Ok(value)
     }
 }
 
@@ -253,7 +264,6 @@ impl Value for i16 {
     }
 
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
-        //    bytebuffer.write_i16(0);
         bytebuffer.write_i16(*self);
     }
 
@@ -262,9 +272,12 @@ impl Value for i16 {
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs == NULL_SHORT_VALUE {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i16()?;
-        return Ok(value);
+        Ok(value)
     }
 }
 
@@ -279,7 +292,6 @@ impl Value for u16 {
     }
 
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
-        //  bytebuffer.write_i16(0);
         bytebuffer.write_u16(*self);
     }
 
@@ -288,9 +300,12 @@ impl Value for u16 {
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs == NULL_SHORT_VALUE {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u16()?;
-        return Ok(value);
+        Ok(value)
     }
 }
 
@@ -305,7 +320,6 @@ impl Value for i32 {
     }
 
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
-        //   bytebuffer.write_i32(0);
         bytebuffer.write_i32(*self);
     }
 
@@ -314,9 +328,12 @@ impl Value for i32 {
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs == NULL_INT_VALUE {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i32()?;
-        return Ok(value);
+        Ok(value)
     }
 }
 
@@ -331,7 +348,6 @@ impl Value for u32 {
     }
 
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
-        //   bytebuffer.write_u32(0);
         bytebuffer.write_u32(*self);
     }
 
@@ -340,9 +356,12 @@ impl Value for u32 {
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs == NULL_INT_VALUE {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u32()?;
-        return Ok(value);
+        Ok(value)
     }
 }
 
@@ -357,7 +376,6 @@ impl Value for i64 {
     }
 
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
-        //   bytebuffer.write_i64(0);
         bytebuffer.write_i64(*self);
     }
 
@@ -366,9 +384,12 @@ impl Value for i64 {
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs == NULL_LONG_VALUE {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_i64()?;
-        return Ok(value);
+        Ok(value)
     }
 }
 
@@ -383,7 +404,6 @@ impl Value for u64 {
     }
 
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8) {
-        // bytebuffer.write_u64(0);
         bytebuffer.write_u64(*self);
     }
 
@@ -392,9 +412,12 @@ impl Value for u64 {
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs == NULL_LONG_VALUE {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_u64()?;
-        return Ok(value);
+        Ok(value)
     }
 }
 
@@ -417,12 +440,14 @@ impl Value for f64 {
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs == NULL_FLOAT_VALUE {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let value = buffer.read_f64()?;
-        return Ok(value);
+        Ok(value)
     }
 }
-
 
 impl Value for String {
     fn get_write_length(&self) -> i32 {
@@ -443,26 +468,22 @@ impl Value for String {
     }
 
     fn from_bytes(bs: Vec<u8>, table_column: &Column) -> Result<Self, VoltError> {
-        return match table_column.header_type {
+        match table_column.header_type {
             STRING_COLUMN => {
-                // if bs == NULL_VARCHAR {
-                //     return Ok(Option::None);
-                // }
+                if bs == NULL_VARCHAR {
+                    return Err(VoltError::UnexpectedNull(table_column.header_name.clone()));
+                }
                 let mut buffer = ByteBuffer::from_bytes(&bs);
                 Ok(buffer.read_string()?)
             }
             _ => {
                 let res = crate::table::VoltTable::get_value_by_idx_column(table_column, bs)?;
                 match res {
-                    Some(v) => {
-                        Ok(v.to_value_string())
-                    }
-                    None => {
-                        Ok("".to_string())
-                    }
+                    Some(v) => Ok(v.to_value_string()),
+                    None => Err(VoltError::UnexpectedNull(table_column.header_name.clone())),
                 }
             }
-        };
+        }
     }
 }
 
@@ -511,12 +532,14 @@ impl Value for Vec<u8> {
     }
 
     fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
+        if bs == NULL_VARCHAR {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut cp = bs.clone();
         cp.drain(0..4);
-        return Ok(cp);
+        Ok(cp)
     }
 }
-
 
 impl Value for DateTime<Utc> {
     fn get_write_length(&self) -> i32 {
@@ -535,10 +558,16 @@ impl Value for DateTime<Utc> {
         return self.to_string();
     }
 
-    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> where Self: Sized {
+    fn from_bytes(bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError>
+    where
+        Self: Sized,
+    {
+        if bs == NULL_TIMESTAMP {
+            return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
+        }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let time = buffer.read_i64()?;
-        return Ok(Utc.timestamp_millis_opt(time / 1000).unwrap());
+        Ok(Utc.timestamp_millis_opt(time / 1000).unwrap())
     }
 }
 
@@ -560,7 +589,14 @@ mod tests {
 
         let mut proc = new_procedure_invocation(1, false, &zero_vec, "@AdHoc");
         let bs = proc.bytes();
-        assert_eq!(bs, vec!(0, 0, 0, 56, 0, 0, 0, 0, 6, 64, 65, 100, 72, 111, 99, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 9, 0, 0, 0, 30, 115, 101, 108, 101, 99, 116, 32, 42, 32, 102, 114, 111, 109, 32, 97, 99, 99, 111, 117, 110, 116, 32, 108, 105, 109, 105, 116, 32, 49, 59));
+        assert_eq!(
+            bs,
+            vec!(
+                0, 0, 0, 56, 0, 0, 0, 0, 6, 64, 65, 100, 72, 111, 99, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1,
+                9, 0, 0, 0, 30, 115, 101, 108, 101, 99, 116, 32, 42, 32, 102, 114, 111, 109, 32,
+                97, 99, 99, 111, 117, 110, 116, 32, 108, 105, 109, 105, 116, 32, 49, 59
+            )
+        );
     }
 
     #[test]
@@ -571,7 +607,7 @@ mod tests {
 
     #[test]
     fn test_big_decimal() {
-        let bs: Vec<u8> = vec!(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 90, 243, 16, 122, 64, 0);
+        let bs: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 90, 243, 16, 122, 64, 0];
         let int = BigInt::from_signed_bytes_be(&*bs);
         let decimal = BigDecimal::new(int, 12);
         let (b, _) = decimal.into_bigint_and_exponent();
@@ -586,7 +622,9 @@ mod tests {
     fn test_big_test_bytes() {
         let i = ByteBuffer::from_bytes(&NULL_BIT_VALUE).read_i8().unwrap();
         assert_eq!(i, -128);
-        let i = ByteBuffer::from_bytes(&NULL_SHORT_VALUE).read_i16().unwrap();
+        let i = ByteBuffer::from_bytes(&NULL_SHORT_VALUE)
+            .read_i16()
+            .unwrap();
         assert_eq!(i, -32768);
         let i = ByteBuffer::from_bytes(&NULL_INT_VALUE).read_i32().unwrap();
         assert_eq!(i, -2147483648);
@@ -624,7 +662,6 @@ mod tests {
         let op: Option<u64> = Option::from_bytes(vec, &column).unwrap();
         assert_eq!(None, op);
 
-
         let vec = NULL_VARCHAR.to_vec();
         let op: Option<String> = Option::from_bytes(vec, &column).unwrap();
         assert_eq!(None, op);
@@ -633,16 +670,13 @@ mod tests {
         let op: Option<Vec<u8>> = Option::from_bytes(vec, &column).unwrap();
         assert_eq!(None, op);
 
-
         let vec = NULL_FLOAT_VALUE.to_vec();
         let op: Option<f64> = Option::from_bytes(vec, &column).unwrap();
         assert_eq!(None, op);
 
-
         let vec = NULL_DECIMAL.to_vec();
         let op: Option<BigDecimal> = Option::from_bytes(vec, &column).unwrap();
         assert_eq!(None, op);
-
 
         let vec = NULL_TIMESTAMP.to_vec();
         let op: Option<DateTime<Utc>> = Option::from_bytes(vec, &column).unwrap();
@@ -654,5 +688,379 @@ mod tests {
         let err = VoltError::NoValue("key is af".to_owned());
         println!("{:?} {} ", err, err);
     }
-}
 
+    #[test]
+    fn test_non_option_null_returns_error_i8() {
+        let column = Column {
+            header_name: "test_col".to_string(),
+            header_type: TINYINT_COLUMN,
+        };
+        let result = i8::from_bytes(NULL_BIT_VALUE.to_vec(), &column);
+        assert!(result.is_err());
+        match result {
+            Err(VoltError::UnexpectedNull(col)) => assert_eq!(col, "test_col"),
+            _ => panic!("Expected UnexpectedNull error"),
+        }
+    }
+
+    #[test]
+    fn test_non_option_null_returns_error_i16() {
+        let column = Column {
+            header_name: "short_col".to_string(),
+            header_type: SHORT_COLUMN,
+        };
+        let result = i16::from_bytes(NULL_SHORT_VALUE.to_vec(), &column);
+        assert!(result.is_err());
+        match result {
+            Err(VoltError::UnexpectedNull(col)) => assert_eq!(col, "short_col"),
+            _ => panic!("Expected UnexpectedNull error"),
+        }
+    }
+
+    #[test]
+    fn test_non_option_null_returns_error_i32() {
+        let column = Column {
+            header_name: "int_col".to_string(),
+            header_type: INT_COLUMN,
+        };
+        let result = i32::from_bytes(NULL_INT_VALUE.to_vec(), &column);
+        assert!(result.is_err());
+        match result {
+            Err(VoltError::UnexpectedNull(col)) => assert_eq!(col, "int_col"),
+            _ => panic!("Expected UnexpectedNull error"),
+        }
+    }
+
+    #[test]
+    fn test_non_option_null_returns_error_i64() {
+        let column = Column {
+            header_name: "long_col".to_string(),
+            header_type: LONG_COLUMN,
+        };
+        let result = i64::from_bytes(NULL_LONG_VALUE.to_vec(), &column);
+        assert!(result.is_err());
+        match result {
+            Err(VoltError::UnexpectedNull(col)) => assert_eq!(col, "long_col"),
+            _ => panic!("Expected UnexpectedNull error"),
+        }
+    }
+
+    #[test]
+    fn test_non_option_null_returns_error_f64() {
+        let column = Column {
+            header_name: "float_col".to_string(),
+            header_type: FLOAT_COLUMN,
+        };
+        let result = f64::from_bytes(NULL_FLOAT_VALUE.to_vec(), &column);
+        assert!(result.is_err());
+        match result {
+            Err(VoltError::UnexpectedNull(col)) => assert_eq!(col, "float_col"),
+            _ => panic!("Expected UnexpectedNull error"),
+        }
+    }
+
+    #[test]
+    fn test_non_option_null_returns_error_string() {
+        let column = Column {
+            header_name: "str_col".to_string(),
+            header_type: STRING_COLUMN,
+        };
+        let result = String::from_bytes(NULL_VARCHAR.to_vec(), &column);
+        assert!(result.is_err());
+        match result {
+            Err(VoltError::UnexpectedNull(col)) => assert_eq!(col, "str_col"),
+            _ => panic!("Expected UnexpectedNull error"),
+        }
+    }
+
+    #[test]
+    fn test_non_option_null_returns_error_vec_u8() {
+        let column = Column {
+            header_name: "bin_col".to_string(),
+            header_type: VAR_BIN_COLUMN,
+        };
+        let result = Vec::<u8>::from_bytes(NULL_VARCHAR.to_vec(), &column);
+        assert!(result.is_err());
+        match result {
+            Err(VoltError::UnexpectedNull(col)) => assert_eq!(col, "bin_col"),
+            _ => panic!("Expected UnexpectedNull error"),
+        }
+    }
+
+    #[test]
+    fn test_non_option_null_returns_error_datetime() {
+        let column = Column {
+            header_name: "time_col".to_string(),
+            header_type: TIMESTAMP_COLUMN,
+        };
+        let result = DateTime::<Utc>::from_bytes(NULL_TIMESTAMP.to_vec(), &column);
+        assert!(result.is_err());
+        match result {
+            Err(VoltError::UnexpectedNull(col)) => assert_eq!(col, "time_col"),
+            _ => panic!("Expected UnexpectedNull error"),
+        }
+    }
+
+    #[test]
+    fn test_non_option_null_returns_error_decimal() {
+        let column = Column {
+            header_name: "dec_col".to_string(),
+            header_type: DECIMAL_COLUMN,
+        };
+        let result = BigDecimal::from_bytes(NULL_DECIMAL.to_vec(), &column);
+        assert!(result.is_err());
+        match result {
+            Err(VoltError::UnexpectedNull(col)) => assert_eq!(col, "dec_col"),
+            _ => panic!("Expected UnexpectedNull error"),
+        }
+    }
+
+    #[test]
+    fn test_non_null_values_work() {
+        let column = Column {
+            header_name: "col".to_string(),
+            header_type: INT_COLUMN,
+        };
+        // Non-NULL value (42 as big-endian i32)
+        let result = i32::from_bytes(vec![0, 0, 0, 42], &column);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+    }
+
+    #[test]
+    fn test_unexpected_null_error_message() {
+        let err = VoltError::UnexpectedNull("my_column".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("my_column"));
+        assert!(msg.contains("Option<T>"));
+    }
+
+    // Marshal tests for basic types
+    #[test]
+    fn test_i8_marshal() {
+        let val: i8 = 42;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, TINYINT_COLUMN);
+        assert_eq!(bytes[1], 42);
+    }
+
+    #[test]
+    fn test_i8_get_write_length() {
+        let val: i8 = 1;
+        assert_eq!(val.get_write_length(), 2);
+    }
+
+    #[test]
+    fn test_u8_marshal() {
+        let val: u8 = 255;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, TINYINT_COLUMN);
+        assert_eq!(bytes[1], 255);
+    }
+
+    #[test]
+    fn test_i16_marshal() {
+        let val: i16 = 1000;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, SHORT_COLUMN);
+        assert_eq!(val.get_write_length(), 3);
+    }
+
+    #[test]
+    fn test_u16_marshal() {
+        let val: u16 = 65535;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        assert_eq!(buf.into_vec()[0] as i8, SHORT_COLUMN);
+    }
+
+    #[test]
+    fn test_i32_marshal() {
+        let val: i32 = 123456;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, INT_COLUMN);
+        assert_eq!(val.get_write_length(), 5);
+    }
+
+    #[test]
+    fn test_u32_marshal() {
+        let val: u32 = 4294967295;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        assert_eq!(buf.into_vec()[0] as i8, INT_COLUMN);
+    }
+
+    #[test]
+    fn test_i64_marshal() {
+        let val: i64 = 9876543210;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, LONG_COLUMN);
+        assert_eq!(val.get_write_length(), 9);
+    }
+
+    #[test]
+    fn test_u64_marshal() {
+        let val: u64 = 18446744073709551615;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        assert_eq!(buf.into_vec()[0] as i8, LONG_COLUMN);
+    }
+
+    #[test]
+    fn test_f64_marshal() {
+        let val: f64 = 3.14159;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, FLOAT_COLUMN);
+        assert_eq!(val.get_write_length(), 9);
+    }
+
+    #[test]
+    fn test_bool_marshal_true() {
+        let val: bool = true;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, TINYINT_COLUMN);
+        assert_eq!(bytes[1], 1);
+    }
+
+    #[test]
+    fn test_bool_marshal_false() {
+        let val: bool = false;
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, TINYINT_COLUMN);
+        assert_eq!(bytes[1], 0);
+    }
+
+    #[test]
+    fn test_string_marshal() {
+        let val: String = "hello".to_string();
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, STRING_COLUMN);
+        assert_eq!(val.get_write_length(), 5 + 5); // header + "hello"
+    }
+
+    #[test]
+    fn test_str_marshal() {
+        let val: &str = "world";
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, STRING_COLUMN);
+        assert_eq!(val.get_write_length(), 5 + 5); // header + "world"
+    }
+
+    #[test]
+    fn test_vec_u8_marshal() {
+        let val: Vec<u8> = vec![1, 2, 3, 4, 5];
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, VAR_BIN_COLUMN);
+        assert_eq!(val.get_write_length(), 5 + 5); // header + 5 bytes
+    }
+
+    #[test]
+    fn test_datetime_marshal() {
+        let val = Utc.timestamp_millis_opt(1000000).unwrap();
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, TIMESTAMP_COLUMN);
+        assert_eq!(val.get_write_length(), 9);
+    }
+
+    #[test]
+    fn test_bigdecimal_marshal() {
+        let val = BigDecimal::from_str("123.456789").unwrap();
+        let mut buf = ByteBuffer::new();
+        val.marshal(&mut buf);
+        let bytes = buf.into_vec();
+        assert_eq!(bytes[0] as i8, DECIMAL_COLUMN);
+        assert_eq!(val.get_write_length(), 17);
+    }
+
+    // to_value_string tests
+    #[test]
+    fn test_i32_to_value_string() {
+        let val: i32 = 42;
+        assert_eq!(val.to_value_string(), "42");
+    }
+
+    #[test]
+    fn test_f64_to_value_string() {
+        let val: f64 = 3.14;
+        assert!(val.to_value_string().starts_with("3.14"));
+    }
+
+    #[test]
+    fn test_bool_to_value_string() {
+        assert_eq!(true.to_value_string(), "true");
+        assert_eq!(false.to_value_string(), "false");
+    }
+
+    #[test]
+    fn test_string_to_value_string() {
+        let val = "hello".to_string();
+        assert_eq!(val.to_value_string(), "hello");
+    }
+
+    // Round-trip tests
+    #[test]
+    fn test_i32_roundtrip() {
+        let col = Column {
+            header_name: "test".to_string(),
+            header_type: INT_COLUMN,
+        };
+        let original: i32 = 12345;
+        let mut buf = ByteBuffer::new();
+        original.marshal_in_table(&mut buf, INT_COLUMN);
+        let bytes = buf.into_vec();
+        let result = i32::from_bytes(bytes, &col).unwrap();
+        assert_eq!(result, original);
+    }
+
+    #[test]
+    fn test_i64_roundtrip() {
+        let col = Column {
+            header_name: "test".to_string(),
+            header_type: LONG_COLUMN,
+        };
+        let original: i64 = 9876543210;
+        let mut buf = ByteBuffer::new();
+        original.marshal_in_table(&mut buf, LONG_COLUMN);
+        let bytes = buf.into_vec();
+        let result = i64::from_bytes(bytes, &col).unwrap();
+        assert_eq!(result, original);
+    }
+
+    #[test]
+    fn test_f64_roundtrip() {
+        let col = Column {
+            header_name: "test".to_string(),
+            header_type: FLOAT_COLUMN,
+        };
+        let original: f64 = 3.14159;
+        let mut buf = ByteBuffer::new();
+        original.marshal_in_table(&mut buf, FLOAT_COLUMN);
+        let bytes = buf.into_vec();
+        let result = f64::from_bytes(bytes, &col).unwrap();
+        assert!((result - original).abs() < 0.00001);
+    }
+}

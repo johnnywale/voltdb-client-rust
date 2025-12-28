@@ -8,8 +8,8 @@ use voltdb_client_rust::*;
 // ============================================================================
 
 mod encode_primitive_tests {
-    use voltdb_client_rust::*;
     use bytebuffer::ByteBuffer;
+    use voltdb_client_rust::*;
 
     #[test]
     fn test_bool_marshal() {
@@ -112,8 +112,8 @@ mod encode_primitive_tests {
 // ============================================================================
 
 mod encode_option_tests {
-    use voltdb_client_rust::*;
     use bytebuffer::ByteBuffer;
+    use voltdb_client_rust::*;
 
     #[test]
     fn test_option_i8_none() {
@@ -421,9 +421,9 @@ mod error_tests {
 // ============================================================================
 
 mod datetime_tests {
-    use voltdb_client_rust::*;
     use bytebuffer::ByteBuffer;
     use chrono::{TimeZone, Utc};
+    use voltdb_client_rust::*;
 
     #[test]
     fn test_datetime_marshal() {

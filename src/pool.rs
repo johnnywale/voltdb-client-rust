@@ -1,20 +1,19 @@
+use std::time::SystemTime;
 use std::{
     fmt,
     sync::{
-        Arc,
         atomic::{AtomicUsize, Ordering},
+        Arc,
     },
 };
-use std::time::SystemTime;
 
-use crate::{block_for_result, Node, node, NodeOpt, Opts, Value, VoltError, VoltTable};
+use crate::{block_for_result, node, Node, NodeOpt, Opts, Value, VoltError, VoltTable};
 
 #[derive(Debug)]
 struct InnerPool {
     opts: Opts,
     pool: Vec<Node>,
 }
-
 
 impl InnerPool {
     pub fn node_sizes(&self) -> usize {
@@ -54,7 +53,6 @@ impl InnerPool {
     }
 }
 
-
 pub struct Pool {
     size: usize,
     total: Arc<AtomicUsize>,
@@ -92,7 +90,6 @@ impl Pool {
             inner_pool: pool,
             size,
             total: Arc::new(AtomicUsize::from(0 as usize)),
-
         })
     }
 
@@ -109,7 +106,7 @@ pub struct PooledConn<'a> {
 
 impl<'a> Drop for PooledConn<'a> {
     fn drop(&mut self) {
-//        let since = SystemTime::now().duration_since(self.created);
+        //        let since = SystemTime::now().duration_since(self.created);
         // TODO record error ,
         //   println!("used {:?} ", since)
     }

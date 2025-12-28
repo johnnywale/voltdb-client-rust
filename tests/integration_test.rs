@@ -1,11 +1,11 @@
 extern crate lazy_static;
 
-use std::{fs, thread};
-use std::sync::*;
 use std::sync::atomic::AtomicPtr;
 use std::sync::atomic::Ordering::Acquire;
+use std::sync::*;
 use std::thread::JoinHandle;
 use std::time::SystemTime;
+use std::{fs, thread};
 
 use testcontainers::core::WaitFor;
 use testcontainers::runners::SyncRunner;
@@ -14,7 +14,6 @@ use testcontainers::{GenericImage, ImageExt};
 use voltdb_client_rust::*;
 
 static POPULATE: Once = Once::new();
-
 
 fn populate(node: &mut Node) {
     POPULATE.call_once(|| {
@@ -43,7 +42,6 @@ fn populate(node: &mut Node) {
     });
 }
 
-
 fn execute_success(node: &mut Node, sql: &str) {
     let x = node.query(sql).unwrap();
     let mut table = x.recv().unwrap();
@@ -53,16 +51,15 @@ fn execute_success(node: &mut Node, sql: &str) {
     }
 }
 
-
 #[test]
 fn test_multiples_thread() -> Result<(), VoltError> {
     let voltdb = GenericImage::new("basvanbeek/voltdb-community", "9.2.1")
-        .with_wait_for(WaitFor::message_on_stdout("Server completed initialization."))
+        .with_wait_for(WaitFor::message_on_stdout(
+            "Server completed initialization.",
+        ))
         .with_env_var("HOST_COUNT", "1");
     let docker = voltdb.start().unwrap();
     let host_port = docker.get_host_port_ipv4(21211).unwrap();
-
-
 
     #[derive(Debug)]
     struct Test {
@@ -110,11 +107,11 @@ fn test_multiples_thread() -> Result<(), VoltError> {
     let mut table = x.recv().unwrap();
     assert!(table.has_error().is_some());
 
-
     let insert_value = "insert into test_types (T1,T2,T3,T4,T5,T6,T7,T8,T9) values (1,2,3,4,5,6,'7','089CD7B35220FFB686012A0B08B49ECD8C06109893971F422F4D4F4E49544F52494E475F33393766643034662D656161642D346230372D613638302D62663562633736666132363148D535A8019CD7B352B001DDEE8501B801BAEE8501C001AAE98601CA01054341534831D0010AE00102E80102F20103555344FA010A0A0355534410809BEE028202050A035553448A020B08B49ECD8C06109893971F9202046E756C6CA2020A0A0355534410C0BD9A2FBA0219312C323139313936382C323139333231302C32313933323435C802C91E8A0400920400D80401880505B20500',NOW());";
 
     block_for_result(&node.query(insert_value)?)?;
-    let mut table = block_for_result(&node.query("select * from test_types where t1 = 1;")?).unwrap();
+    let mut table =
+        block_for_result(&node.query("select * from test_types where t1 = 1;")?).unwrap();
     table.advance_row();
     let test: Test = table.map_row();
     assert_eq!(test.t1, Some(true));
@@ -131,12 +128,13 @@ fn test_multiples_thread() -> Result<(), VoltError> {
         let local = Arc::clone(&rc);
         let handle = thread::spawn(move || unsafe {
             let load = local.load(Acquire);
-            let res = &(*load).query("select * from test_types where t1 = 1;").unwrap();
+            let res = &(*load)
+                .query("select * from test_types where t1 = 1;")
+                .unwrap();
             let mut table = block_for_result(&res).unwrap();
             table.advance_row();
             let _: Test = table.map_row();
-        }
-        );
+        });
         vec.push(handle);
     }
     for handle in vec {
