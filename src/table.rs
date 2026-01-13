@@ -19,6 +19,7 @@ pub struct Column {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct VoltTable {
     info: VoltResponseInfo,
     column_count: i16,
@@ -87,7 +88,7 @@ impl VoltTable {
                 header_type: *tp,
             })
         }
-        crate::table::VoltTable::new_voltdb_table(columns)
+        VoltTable::new_voltdb_table(columns)
     }
 
     pub fn new_voltdb_table(columns: Vec<Column>) -> Self {

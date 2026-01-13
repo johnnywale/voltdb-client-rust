@@ -5,6 +5,7 @@ use voltdb_client_rust::*;
 
 fn main() -> Result<(), VoltError> {
     #[derive(Debug)]
+    #[allow(dead_code)]
     struct Test {
         t1: Option<i8>,
         t2: Option<i16>,

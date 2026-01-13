@@ -43,6 +43,7 @@ impl From<i8> for ResponseStatus {
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct VoltResponseInfo {
     handle: i64,
     status: ResponseStatus,

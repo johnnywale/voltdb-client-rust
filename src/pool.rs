@@ -99,6 +99,7 @@ impl Pool {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct PooledConn<'a> {
     created: SystemTime,
     conn: &'a mut Node,

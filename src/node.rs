@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, Shutdown, TcpStream};
-use std::str::FromStr;
+use std::net::{Ipv4Addr, Shutdown, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock, mpsc};
@@ -145,6 +144,7 @@ pub struct NodeOpt {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) struct NetworkRequest {
     handle: i64,
     query: bool,
@@ -324,7 +324,7 @@ impl Node {
                 stream.shutdown(Shutdown::Both)?;
             }
         }
-        self.tcp_stream = Box::new(Option::None);
+        *self.tcp_stream = Option::None;
         Ok(())
     }
     /// Listen on new message come in .
@@ -367,6 +367,16 @@ pub struct ConnInfo {
     pub leader_addr: Ipv4Addr,
     pub build: String,
 }
+impl Default for ConnInfo {
+    fn default() -> Self {
+        Self {
+            host_id: 0,
+            connection: 0,
+            leader_addr: Ipv4Addr::new(127, 0, 0, 1),
+            build: String::new(),
+        }
+    }
+}
 
 /// Wait for response, convert response error from volt error to `VoltError`.
 pub fn block_for_result(res: &Receiver<VoltTable>) -> Result<VoltTable, VoltError> {
@@ -382,10 +392,17 @@ pub fn reset() {}
 
 /// Create new connection to server .
 pub fn get_node(addr: &str) -> Result<Node, VoltError> {
-    let url = addr.split(":").collect::<Vec<&str>>();
-    let host = url.first().unwrap().to_string();
-    let port = u16::from_str(url.get(1).unwrap()).unwrap();
-    let ip_port = IpPort::new(host, port);
+    let addrs = addr
+        .to_socket_addrs()
+        .map_err(|_| VoltError::InvalidConfig)?;
+
+    let socket_addr = addrs
+        .into_iter()
+        .find(|s| s.is_ipv4()) // 过滤出 IPv4
+        .ok_or(VoltError::InvalidConfig)?;
+
+    let ip_port = IpPort::new(socket_addr.ip().to_string(), socket_addr.port());
+
     let opt = NodeOpt {
         ip_port,
         user: None,

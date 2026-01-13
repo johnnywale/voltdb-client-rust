@@ -172,9 +172,7 @@ pub mod protocol;
 mod response;
 pub mod table;
 
-#[cfg(feature = "tokio")]
 pub mod async_node;
-#[cfg(feature = "tokio")]
 pub mod async_pool;
 
 pub use bigdecimal;

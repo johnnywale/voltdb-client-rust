@@ -59,6 +59,10 @@ pub enum VoltError {
             display("InvalidColumnType {}", tp)
         }
 
+        MessageTooLarge(tp: usize) {
+            display("MessageTooLarge {}", tp)
+        }
+
         NoValue (descr : String) {
             display("Error {}", descr)
         }
@@ -93,6 +97,9 @@ pub enum VoltError {
         Timeout {
              display("Operation timeout")
         }
+        ConnectionClosed {
+             display("Connection Closed")
+        }
         /// Returned when a non-Option type encounters a NULL value.
         /// Use Option<T> if the column may contain NULL values.
         UnexpectedNull(column: String) {
@@ -109,7 +116,7 @@ impl<T> From<PoisonError<T>> for VoltError {
 pub trait ValuePrimary {}
 
 //pub trait
-pub trait Value: Debug {
+pub trait Value: Debug + Send + Sync {
     fn get_write_length(&self) -> i32;
     fn marshal(&self, bytebuffer: &mut ByteBuffer);
     fn marshal_in_table(&self, bytebuffer: &mut ByteBuffer, _column_type: i8);

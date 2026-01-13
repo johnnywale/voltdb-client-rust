@@ -1,3 +1,4 @@
+#![cfg(feature = "tokio")]
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};

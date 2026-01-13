@@ -1,31 +1,45 @@
 [package]
 name = "voltdb-client-rust"
-version = "0.1.12"
+version = "0.1.13"
 edition = "2024"
 authors = ["johnnywale <johnnywalee@gmail.com>"]
 license = "MIT"
 readme = "README.md"
-description = """
-A socket client library for Voltdb server
-"""
+description = "A socket client library for VoltDB server supporting both sync and async operations."
 categories = ["database"]
-keywords = ["voltdb", "asynchronous"]
+keywords = ["voltdb", "asynchronous", "database-client"]
 repository = "https://github.com/johnnywale/voltdb-client-rust"
 
 [features]
-default = []
-tokio = ["dep:tokio"]
+# 默认开启异步支持
+default = ["tokio"]
+# 异步特性相关的依赖集合
+tokio = ["dep:tokio", "dep:dashmap", "dep:bytes"]
 
 [dependencies]
+# 核心通用依赖 (同步异步共用)
 bytebuffer = "2.3.0"
 byteorder = "1.5"
 chrono = "0.4"
 bigdecimal = "0.4.0"
 sha2 = "0.10"
 quick-error = "2.0.1"
-tokio = { version = "1.35", features = ["net", "io-util", "sync", "rt", "macros"], optional = true }
+futures = "0.3.31"
+
+
+tokio = { version = "1.35", features = ["net", "io-util", "sync", "rt", "time", "macros"], optional = true }
+# DashMap 用于 async_node.rs 中的高并发请求映射
+dashmap = { version = "6.0", optional = true }
+# Bytes 用于零拷贝 Buffer 处理
+bytes = { version = "1.5", optional = true }
 
 [dev-dependencies]
-testcontainers = { version = "0.26", features = ["blocking"] }
+# 测试容器，用于集成测试
+testcontainers = { version = "0.23", features = ["blocking"] }
 lazy_static = "1.4.0"
-tokio = { version = "1.35", features = ["rt-multi-thread", "macros"] }
+# 测试时强制开启全量 tokio 功能
+tokio = { version = "1.35", features = ["full"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
