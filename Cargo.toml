@@ -11,13 +11,10 @@ keywords = ["voltdb", "asynchronous", "database-client"]
 repository = "https://github.com/johnnywale/voltdb-client-rust"
 
 [features]
-# 默认开启异步支持
 default = ["tokio"]
-# 异步特性相关的依赖集合
 tokio = ["dep:tokio", "dep:dashmap", "dep:bytes"]
 
 [dependencies]
-# 核心通用依赖 (同步异步共用)
 bytebuffer = "2.3.0"
 byteorder = "1.5"
 chrono = "0.4"
@@ -27,15 +24,12 @@ quick-error = "2.0.1"
 futures = "0.3.31"
 
 
-tokio = { version = "1.35", features = ["net", "io-util", "sync", "rt", "time", "macros"], optional = true }
-# DashMap 用于 async_node.rs 中的高并发请求映射
+tokio = { version = "1", features = ["net", "io-util", "sync", "rt", "time", "macros"], optional = true }
 dashmap = { version = "6.0", optional = true }
-# Bytes 用于零拷贝 Buffer 处理
 bytes = { version = "1.5", optional = true }
 
 [dev-dependencies]
-# 测试容器，用于集成测试
-testcontainers = { version = "0.23", features = ["blocking"] }
+testcontainers = { version = "0.26", features = ["blocking"] }
 lazy_static = "1.4.0"
 # 测试时强制开启全量 tokio 功能
 tokio = { version = "1.35", features = ["full"] }

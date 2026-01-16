@@ -362,6 +362,8 @@ mod node_config_tests {
             ip_port: IpPort::new("localhost".to_string(), 21211),
             user: Some("admin".to_string()),
             pass: Some("password".to_string()),
+            connect_timeout: None,
+            read_timeout: None,
         };
         assert!(opt.user.is_some());
         assert!(opt.pass.is_some());
@@ -373,6 +375,8 @@ mod node_config_tests {
             ip_port: IpPort::new("localhost".to_string(), 21211),
             user: None,
             pass: None,
+            connect_timeout: None,
+            read_timeout: None,
         };
         assert!(opt.user.is_none());
         assert!(opt.pass.is_none());

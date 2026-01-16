@@ -73,6 +73,8 @@ async fn test_async_multiple_tasks() -> Result<(), VoltError> {
         ip_port: IpPort::new("127.0.0.1".to_string(), port),
         user: None,
         pass: None,
+        connect_timeout: None,
+        read_timeout: None,
     })
     .await?;
 

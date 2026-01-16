@@ -1,10 +1,58 @@
+//! # VoltDB Node Connection
+//!
+//! This module provides the core TCP connection handling for communicating with VoltDB servers.
+//!
+//! ## Architecture
+//!
+//! The connection uses a single-threaded TCP listener design:
+//!
+//! - We spawn one dedicated thread to synchronously read from the TcpStream.
+//! - Each incoming message is dispatched via channels to the rest of the application,
+//!   allowing users to perform asynchronous operations on the received data.
+//! - Using `Arc<Mutex<TcpStream>>` would introduce blocking and contention,
+//!   because locking for each read/write would stall other operations. This design
+//!   avoids that while keeping the network I/O simple and efficient.
+//!
+//! ## Timeouts
+//!
+//! The module supports two types of timeouts:
+//!
+//! - **Connection timeout**: Limits how long the initial TCP connection attempt will wait.
+//!   Use [`OptsBuilder::connect_timeout`] or set [`NodeOpt::connect_timeout`].
+//! - **Read timeout**: Limits how long socket read operations will wait for data.
+//!   This affects both the authentication handshake and the background listener thread.
+//!   Use [`OptsBuilder::read_timeout`] or set [`NodeOpt::read_timeout`].
+//!
+//! ## Example
+//!
+//! ```no_run
+//! use voltdb_client_rust::{Opts, Pool};
+//! use std::time::Duration;
+//!
+//! // Create connection options with timeouts
+//! let opts = Opts::builder()
+//!     .host("localhost", 21212)
+//!     .connect_timeout(Duration::from_secs(5))
+//!     .read_timeout(Duration::from_secs(30))
+//!     .build()
+//!     .unwrap();
+//!
+//! // Create a connection pool
+//! let mut pool = Pool::new(opts)?;
+//! let mut conn = pool.get_conn()?;
+//!
+//! // Execute a query
+//! let result = conn.query("SELECT * FROM my_table")?;
+//! # Ok::<(), voltdb_client_rust::VoltError>(())
+//! ```
+
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::io::{Read, Write};
-use std::net::{Ipv4Addr, Shutdown, TcpStream, ToSocketAddrs};
+use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{Arc, Mutex, RwLock, mpsc};
+use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::Duration;
 
@@ -18,9 +66,42 @@ use crate::response::VoltResponseInfo;
 use crate::table::{VoltTable, new_volt_table};
 use crate::volt_param;
 
+/// Connection options for VoltDB client.
+///
+/// This struct encapsulates all configuration options needed to establish
+/// connections to a VoltDB cluster. Use [`Opts::builder()`] for a fluent
+/// configuration API or [`Opts::new()`] for simple configurations.
+///
+/// # Example
+/// ```no_run
+/// use voltdb_client_rust::{Opts, IpPort};
+///
+/// // Simple configuration
+/// let hosts = vec![IpPort::new("localhost".to_string(), 21212)];
+/// let opts = Opts::new(hosts);
+///
+/// // Or use the builder for more options
+/// let opts = Opts::builder()
+///     .host("localhost", 21212)
+///     .user("admin")
+///     .password("secret")
+///     .build()
+///     .unwrap();
+/// ```
 #[derive(Clone, Eq, PartialEq, Debug)]
 pub struct Opts(pub(crate) Box<InnerOpts>);
 
+/// Host and port pair for VoltDB server connections.
+///
+/// Represents a single VoltDB server endpoint. Multiple `IpPort` instances
+/// can be used with connection pools for cluster connectivity.
+///
+/// # Example
+/// ```
+/// use voltdb_client_rust::IpPort;
+///
+/// let endpoint = IpPort::new("192.168.1.100".to_string(), 21212);
+/// ```
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IpPort {
     pub(crate) ip_host: String,
@@ -28,12 +109,24 @@ pub struct IpPort {
 }
 
 impl IpPort {
+    /// Creates a new `IpPort` with the given hostname/IP and port.
+    ///
+    /// # Arguments
+    /// * `ip_host` - Hostname or IP address of the VoltDB server
+    /// * `port` - Port number (typically 21212 for client connections)
     pub fn new(ip_host: String, port: u16) -> Self {
         IpPort { ip_host, port }
     }
 }
 
 impl Opts {
+    /// Creates connection options with the given hosts and default settings.
+    ///
+    /// This is a convenience constructor for simple configurations without
+    /// authentication or timeouts. For more control, use [`Opts::builder()`].
+    ///
+    /// # Arguments
+    /// * `hosts` - List of VoltDB server endpoints to connect to
     pub fn new(hosts: Vec<IpPort>) -> Opts {
         Opts(Box::new(InnerOpts {
             ip_ports: hosts,
@@ -44,7 +137,19 @@ impl Opts {
         }))
     }
 
-    /// Create a new OptsBuilder for fluent configuration.
+    /// Creates a new [`OptsBuilder`] for fluent configuration.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use voltdb_client_rust::Opts;
+    /// use std::time::Duration;
+    ///
+    /// let opts = Opts::builder()
+    ///     .host("localhost", 21212)
+    ///     .connect_timeout(Duration::from_secs(5))
+    ///     .build()
+    ///     .unwrap();
+    /// ```
     pub fn builder() -> OptsBuilder {
         OptsBuilder::default()
     }
@@ -137,31 +242,85 @@ pub(crate) struct InnerOpts {
     pub(crate) read_timeout: Option<Duration>,
 }
 
+/// Options for creating a single [`Node`] connection.
+///
+/// This struct holds the connection parameters for establishing a TCP connection
+/// to a VoltDB server node.
+///
+/// # Example
+/// ```no_run
+/// use voltdb_client_rust::{NodeOpt, IpPort};
+/// use std::time::Duration;
+///
+/// let opt = NodeOpt {
+///     ip_port: IpPort::new("localhost".to_string(), 21212),
+///     user: Some("admin".to_string()),
+///     pass: Some("password".to_string()),
+///     connect_timeout: Some(Duration::from_secs(10)),
+///     read_timeout: Some(Duration::from_secs(30)),
+/// };
+/// ```
 pub struct NodeOpt {
+    /// The host and port to connect to.
     pub ip_port: IpPort,
+    /// Optional username for authentication.
     pub user: Option<String>,
+    /// Optional password for authentication.
     pub pass: Option<String>,
+    /// Connection timeout. If `None`, the connection attempt will block indefinitely.
+    pub connect_timeout: Option<Duration>,
+    /// Read timeout for socket operations. If `None`, reads will block indefinitely.
+    /// This affects the background listener thread that receives responses from the server.
+    pub read_timeout: Option<Duration>,
 }
 
-#[derive(Debug)]
-#[allow(dead_code)]
-pub(crate) struct NetworkRequest {
-    handle: i64,
-    query: bool,
-    sync: bool,
-    num_bytes: i32,
-    channel: Mutex<Sender<VoltTable>>,
-}
+/// Type alias for the pending requests map.
+/// Maps request handles to their response channels.
+type PendingRequests = HashMap<i64, Sender<VoltTable>>;
 
+/// Marker trait for VoltDB connections.
+///
+/// Implemented by both synchronous [`Node`] and async `AsyncNode` connections.
 pub trait Connection: Sync + Send + 'static {}
 
+/// A single TCP connection to a VoltDB server node.
+///
+/// `Node` represents a persistent TCP connection that can be used to execute
+/// queries and stored procedures against a VoltDB database. It spawns a
+/// background thread to receive responses asynchronously.
+///
+/// # Thread Safety
+///
+/// The `Node` struct is designed to be used from a single thread at a time.
+/// For concurrent access, use a connection pool via [`crate::Pool`].
+///
+/// # Example
+///
+/// ```no_run
+/// use voltdb_client_rust::{Node, NodeOpt, IpPort, block_for_result};
+///
+/// let opt = NodeOpt {
+///     ip_port: IpPort::new("localhost".to_string(), 21212),
+///     user: None,
+///     pass: None,
+///     connect_timeout: None,
+///     read_timeout: None,
+/// };
+///
+/// let mut node = Node::new(opt)?;
+/// let rx = node.query("SELECT * FROM my_table")?;
+/// let table = block_for_result(&rx)?;
+/// # Ok::<(), voltdb_client_rust::VoltError>(())
+/// ```
 #[allow(dead_code)]
 pub struct Node {
-    tcp_stream: Box<Option<TcpStream>>,
+    tcp_stream: Option<TcpStream>,
     info: ConnInfo,
-    requests: Arc<RwLock<HashMap<i64, NetworkRequest>>>,
+    /// Pending requests awaiting responses. Uses Mutex instead of RwLock since
+    /// both insert (main thread) and remove (listener thread) require exclusive access.
+    requests: Arc<Mutex<PendingRequests>>,
     stop: Arc<Mutex<bool>>,
-    counter: Mutex<AtomicI64>,
+    counter: AtomicI64,
 }
 
 impl Debug for Node {
@@ -185,15 +344,68 @@ impl Drop for Node {
 impl Connection for Node {}
 
 impl Node {
+    /// Creates a new connection to a VoltDB server node.
+    ///
+    /// This method establishes a TCP connection to the specified host/port,
+    /// performs authentication, and spawns a background listener thread for
+    /// receiving asynchronous responses.
+    ///
+    /// # Arguments
+    /// * `opt` - Connection options including host, port, credentials, and timeouts.
+    ///
+    /// # Timeouts
+    /// * `connect_timeout` - If set, limits how long the connection attempt will wait.
+    ///   If not set, the connection attempt blocks indefinitely.
+    /// * `read_timeout` - If set, socket read operations will timeout after this duration.
+    ///   This affects both the authentication phase and the background listener thread.
+    ///
+    /// # Errors
+    /// Returns `VoltError` if:
+    /// * The connection cannot be established (network error or timeout)
+    /// * DNS resolution fails
+    /// * Authentication fails
+    /// * The server rejects the connection
+    ///
+    /// # Example
+    /// ```no_run
+    /// use voltdb_client_rust::{Node, NodeOpt, IpPort};
+    /// use std::time::Duration;
+    ///
+    /// let opt = NodeOpt {
+    ///     ip_port: IpPort::new("localhost".to_string(), 21212),
+    ///     user: None,
+    ///     pass: None,
+    ///     connect_timeout: Some(Duration::from_secs(5)),
+    ///     read_timeout: Some(Duration::from_secs(30)),
+    /// };
+    /// let node = Node::new(opt)?;
+    /// # Ok::<(), voltdb_client_rust::VoltError>(())
+    /// ```
     pub fn new(opt: NodeOpt) -> Result<Node, VoltError> {
         let ip_host = opt.ip_port;
-        let addr = format!("{}:{}", ip_host.ip_host, ip_host.port);
+        let addr_str = format!("{}:{}", ip_host.ip_host, ip_host.port);
 
         // Build authentication message using shared protocol code
         let auth_msg = build_auth_message(opt.user.as_deref(), opt.pass.as_deref())?;
 
-        // Connect to server
-        let mut stream: TcpStream = TcpStream::connect(addr)?;
+        // Connect to server with optional timeout
+        let mut stream: TcpStream = match opt.connect_timeout {
+            Some(timeout) => {
+                // Resolve address for connect_timeout (requires SocketAddr)
+                let socket_addr: SocketAddr = addr_str
+                    .to_socket_addrs()
+                    .map_err(|_| VoltError::InvalidConfig)?
+                    .find(|s| s.is_ipv4())
+                    .ok_or(VoltError::InvalidConfig)?;
+                TcpStream::connect_timeout(&socket_addr, timeout)?
+            }
+            None => TcpStream::connect(&addr_str)?,
+        };
+
+        // Set read timeout if configured
+        if let Some(read_timeout) = opt.read_timeout {
+            stream.set_read_timeout(Some(read_timeout))?;
+        }
 
         // Send auth request
         stream.write_all(&auth_msg)?;
@@ -207,67 +419,121 @@ impl Node {
         // Parse auth response using shared protocol code
         let info = parse_auth_response(&all)?;
 
-        let data = Arc::new(RwLock::new(HashMap::new()));
+        let requests = Arc::new(Mutex::new(HashMap::new()));
         let mut res = Node {
             stop: Arc::new(Mutex::new(false)),
-            tcp_stream: Box::new(Option::Some(stream)),
+            tcp_stream: Some(stream),
             info,
-            requests: data,
-            counter: Mutex::new(AtomicI64::new(1)),
+            requests,
+            counter: AtomicI64::new(1),
         };
         res.listen()?;
         Ok(res)
     }
+    /// Returns the next unique sequence number for request tracking.
+    ///
+    /// Each request to VoltDB uses a unique handle (sequence number) for
+    /// matching responses to requests.
     pub fn get_sequence(&self) -> i64 {
-        let lock = self.counter.lock();
-        let seq = lock.unwrap();
-
-        seq.fetch_add(1, Ordering::Relaxed)
+        self.counter.fetch_add(1, Ordering::Relaxed)
     }
 
+    /// Lists all stored procedures available in the VoltDB database.
+    ///
+    /// This calls the `@SystemCatalog` system procedure with "PROCEDURES" argument.
+    ///
+    /// # Returns
+    /// A receiver that will yield a `VoltTable` containing procedure metadata.
     pub fn list_procedures(&mut self) -> Result<Receiver<VoltTable>, VoltError> {
         self.call_sp("@SystemCatalog", volt_param!("PROCEDURES"))
     }
 
+    /// Executes a stored procedure with the given parameters.
+    ///
+    /// # Arguments
+    /// * `query` - The name of the stored procedure (e.g., "@AdHoc", "MyProcedure")
+    /// * `param` - Vector of parameter values. Use [`volt_param!`] macro for convenience.
+    ///
+    /// # Returns
+    /// A receiver that will yield the result `VoltTable` when available.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use voltdb_client_rust::{Node, NodeOpt, IpPort, block_for_result, volt_param};
+    ///
+    /// # let opt = NodeOpt {
+    /// #     ip_port: IpPort::new("localhost".to_string(), 21212),
+    /// #     user: None, pass: None, connect_timeout: None, read_timeout: None,
+    /// # };
+    /// let mut node = Node::new(opt)?;
+    /// let rx = node.call_sp("MyProcedure", volt_param![1i32, "test".to_string()])?;
+    /// let result = block_for_result(&rx)?;
+    /// # Ok::<(), voltdb_client_rust::VoltError>(())
+    /// ```
     pub fn call_sp(
         &mut self,
         query: &str,
         param: Vec<&dyn Value>,
     ) -> Result<Receiver<VoltTable>, VoltError> {
-        let req = self.get_sequence();
-        let mut proc = new_procedure_invocation(req, false, &param, query);
+        let handle = self.get_sequence();
+        let mut proc = new_procedure_invocation(handle, false, &param, query);
         let (tx, rx): (Sender<VoltTable>, Receiver<VoltTable>) = mpsc::channel();
-        let shared_sender = Mutex::new(tx);
-        let seq = NetworkRequest {
-            query: true,
-            handle: req,
-            num_bytes: proc.slen,
-            sync: true,
-            channel: shared_sender,
-        };
-        self.requests.write()?.insert(req, seq);
+
+        // Register the response channel before sending the request
+        self.requests.lock()?.insert(handle, tx);
+
         let bs = proc.bytes();
-        let tcp_stream = self.tcp_stream.as_mut();
-        match tcp_stream {
-            None => {
-                return Err(VoltError::ConnectionNotAvailable);
-            }
+        match self.tcp_stream.as_mut() {
+            None => Err(VoltError::ConnectionNotAvailable),
             Some(stream) => {
                 stream.write_all(&bs)?;
+                Ok(rx)
             }
         }
-        Ok(rx)
     }
 
+    /// Uploads a JAR file containing stored procedure classes to VoltDB.
+    ///
+    /// This calls the `@UpdateClasses` system procedure to deploy new classes.
+    ///
+    /// # Arguments
+    /// * `bs` - The JAR file contents as bytes
     pub fn upload_jar(&mut self, bs: Vec<u8>) -> Result<Receiver<VoltTable>, VoltError> {
         self.call_sp("@UpdateClasses", volt_param!(bs, ""))
     }
-    /// Use `@AdHoc` proc to query .
+
+    /// Executes an ad-hoc SQL query.
+    ///
+    /// This is a convenience method that calls the `@AdHoc` system procedure.
+    ///
+    /// # Arguments
+    /// * `sql` - The SQL query string to execute
+    ///
+    /// # Returns
+    /// A receiver that will yield the result `VoltTable` when available.
+    ///
+    /// # Example
+    /// ```no_run
+    /// use voltdb_client_rust::{Node, NodeOpt, IpPort, block_for_result};
+    ///
+    /// # let opt = NodeOpt {
+    /// #     ip_port: IpPort::new("localhost".to_string(), 21212),
+    /// #     user: None, pass: None, connect_timeout: None, read_timeout: None,
+    /// # };
+    /// let mut node = Node::new(opt)?;
+    /// let rx = node.query("SELECT COUNT(*) FROM users")?;
+    /// let result = block_for_result(&rx)?;
+    /// # Ok::<(), voltdb_client_rust::VoltError>(())
+    /// ```
     pub fn query(&mut self, sql: &str) -> Result<Receiver<VoltTable>, VoltError> {
         let zero_vec: Vec<&dyn Value> = vec![&sql];
         self.call_sp("@AdHoc", zero_vec)
     }
 
+    /// Sends a ping to the VoltDB server.
+    ///
+    /// This can be used to keep the connection alive or verify connectivity.
+    /// The ping response is handled internally and not returned to the caller.
     pub fn ping(&mut self) -> Result<(), VoltError> {
         let zero_vec: Vec<&dyn Value> = Vec::new();
         let mut proc = new_procedure_invocation(PING_HANDLE, false, &zero_vec, "@Ping");
@@ -284,38 +550,54 @@ impl Node {
         Ok(())
     }
 
+    /// Reads and processes a single message from the TCP stream.
+    ///
+    /// # Arguments
+    /// * `tcp` - The TCP stream to read from
+    /// * `requests` - Map of pending requests awaiting responses
+    /// * `buffer` - Reusable buffer for reading message data (reduces allocations)
     fn job(
-        mut tcp: &TcpStream,
-        requests: &Arc<RwLock<HashMap<i64, NetworkRequest>>>,
+        tcp: &mut impl Read,
+        requests: &Arc<Mutex<PendingRequests>>,
+        buffer: &mut Vec<u8>,
     ) -> Result<(), VoltError> {
-        let read_res = tcp.read_u32::<BigEndian>();
-        match read_res {
-            Ok(read) => {
-                if read > 0 {
-                    let mut all = vec![0; read as usize];
-                    tcp.read_exact(&mut all)?;
-                    let mut res = ByteBuffer::from_bytes(&all);
-                    let _ = res.read_u8()?;
-                    let handle = res.read_i64()?;
-                    if handle == PING_HANDLE {
-                        return Ok(());
-                    }
-                    if let Some(t) = requests.write()?.remove(&handle) {
-                        let info = VoltResponseInfo::new(&mut res, handle)?;
-                        let table = new_volt_table(&mut res, info)?;
-                        let sender = t.channel.lock()?;
-                        sender.send(table).unwrap();
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(VoltError::Io(e));
-            }
+        // Read message length (4 bytes, big-endian)
+        let msg_len = tcp.read_u32::<BigEndian>()?;
+        if msg_len == 0 {
+            return Ok(());
         }
+
+        // Reuse buffer: resize if needed, but capacity is retained
+        buffer.resize(msg_len as usize, 0);
+        tcp.read_exact(buffer)?;
+
+        let mut res = ByteBuffer::from_bytes(buffer);
+        // Skip protocol version byte (always 0 for current protocol)
+        let _ = res.read_u8()?;
+        let handle = res.read_i64()?;
+
+        if handle == PING_HANDLE {
+            return Ok(()); // Ping response, nothing else to do
+        }
+
+        if let Some(sender) = requests.lock()?.remove(&handle) {
+            let info = VoltResponseInfo::new(&mut res, handle)?;
+            let table = new_volt_table(&mut res, info)?;
+            // Ignore send error - receiver may have been dropped if caller
+            // timed out or cancelled the request
+            let _ = sender.send(table);
+        }
+
         Ok(())
     }
+    /// Gracefully shuts down the connection.
+    ///
+    /// This stops the background listener thread and closes the TCP connection.
+    /// The `Node` will be unusable after calling this method.
+    ///
+    /// Note: This is automatically called when the `Node` is dropped.
     pub fn shutdown(&mut self) -> Result<(), VoltError> {
-        let mut stop = self.stop.lock().unwrap();
+        let mut stop = self.stop.lock()?;
         *stop = true;
         let res = self.tcp_stream.as_mut();
         match res {
@@ -324,32 +606,42 @@ impl Node {
                 stream.shutdown(Shutdown::Both)?;
             }
         }
-        *self.tcp_stream = Option::None;
+        self.tcp_stream = None;
         Ok(())
     }
-    /// Listen on new message come in .
+
+    /// Starts the background listener thread for receiving responses.
     fn listen(&mut self) -> Result<(), VoltError> {
         let requests = Arc::clone(&self.requests);
 
-        let res = self.tcp_stream.as_mut();
-        match res {
+        match self.tcp_stream.as_mut() {
             None => Ok(()),
-            Some(res) => {
-                let tcp = res.try_clone()?;
+            Some(stream) => {
+                let mut tcp = stream.try_clone()?;
                 let stopping = Arc::clone(&self.stop);
+
                 thread::spawn(move || {
+                    // Reusable buffer to reduce allocation pressure.
+                    // Starts with 4KB capacity, grows as needed but rarely shrinks.
+                    let mut buffer = Vec::with_capacity(4096);
+
                     loop {
-                        if *stopping.lock().unwrap() {
+                        // Check stop flag before blocking on read
+                        let should_stop = stopping
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner());
+                        if *should_stop {
                             break;
-                        } else {
-                            let res = crate::node::Node::job(&tcp, &requests);
-                            match res {
-                                Ok(_) => {}
-                                Err(err) => {
-                                    if !*stopping.lock().unwrap() {
-                                        eprintln!("{} ", err)
-                                    }
-                                }
+                        }
+                        drop(should_stop); // Release lock before blocking on I/O
+
+                        if let Err(err) = Node::job(&mut tcp, &requests, &mut buffer) {
+                            // Only print error if we're not intentionally stopping
+                            let is_stopping = stopping
+                                .lock()
+                                .unwrap_or_else(|poisoned| poisoned.into_inner());
+                            if !*is_stopping {
+                                eprintln!("VoltDB listener error: {}", err);
                             }
                         }
                     }
@@ -360,13 +652,22 @@ impl Node {
     }
 }
 
+/// Connection metadata returned by the VoltDB server during authentication.
+///
+/// This struct contains information about the server that the client connected to,
+/// including the host ID, connection ID, and cluster leader address.
 #[derive(Debug, Clone)]
 pub struct ConnInfo {
+    /// The ID of the host in the VoltDB cluster.
     pub host_id: i32,
+    /// Unique connection identifier assigned by the server.
     pub connection: i64,
+    /// IPv4 address of the cluster leader node.
     pub leader_addr: Ipv4Addr,
+    /// VoltDB server build/version string.
     pub build: String,
 }
+
 impl Default for ConnInfo {
     fn default() -> Self {
         Self {
@@ -378,7 +679,35 @@ impl Default for ConnInfo {
     }
 }
 
-/// Wait for response, convert response error from volt error to `VoltError`.
+/// Blocks until a response is received and converts any VoltDB errors.
+///
+/// This is a convenience function for synchronous usage. It waits for the
+/// response on the channel and converts VoltDB-level errors (from the response)
+/// into `VoltError`.
+///
+/// # Arguments
+/// * `res` - The receiver from a query or stored procedure call
+///
+/// # Returns
+/// The result `VoltTable` on success, or `VoltError` if the operation failed.
+///
+/// # Example
+/// ```no_run
+/// use voltdb_client_rust::{Node, NodeOpt, IpPort, block_for_result};
+///
+/// # let opt = NodeOpt {
+/// #     ip_port: IpPort::new("localhost".to_string(), 21212),
+/// #     user: None, pass: None, connect_timeout: None, read_timeout: None,
+/// # };
+/// let mut node = Node::new(opt)?;
+/// let rx = node.query("SELECT * FROM users")?;
+/// let table = block_for_result(&rx)?;
+///
+/// while table.advance_row() {
+///     // Process rows...
+/// }
+/// # Ok::<(), voltdb_client_rust::VoltError>(())
+/// ```
 pub fn block_for_result(res: &Receiver<VoltTable>) -> Result<VoltTable, VoltError> {
     let mut table = res.recv()?;
     let err = table.has_error();
@@ -390,7 +719,24 @@ pub fn block_for_result(res: &Receiver<VoltTable>) -> Result<VoltTable, VoltErro
 
 pub fn reset() {}
 
-/// Create new connection to server .
+/// Creates a new connection to a VoltDB server using an address string.
+///
+/// This is a convenience function that parses the address string and creates
+/// a connection with default settings (no authentication, no timeouts).
+///
+/// # Arguments
+/// * `addr` - The server address in "host:port" format (e.g., "localhost:21212")
+///
+/// # Errors
+/// Returns `VoltError::InvalidConfig` if the address cannot be parsed or resolved.
+///
+/// # Example
+/// ```no_run
+/// use voltdb_client_rust::get_node;
+///
+/// let node = get_node("localhost:21212")?;
+/// # Ok::<(), voltdb_client_rust::VoltError>(())
+/// ```
 pub fn get_node(addr: &str) -> Result<Node, VoltError> {
     let addrs = addr
         .to_socket_addrs()
@@ -398,7 +744,7 @@ pub fn get_node(addr: &str) -> Result<Node, VoltError> {
 
     let socket_addr = addrs
         .into_iter()
-        .find(|s| s.is_ipv4()) // 过滤出 IPv4
+        .find(|s| s.is_ipv4())
         .ok_or(VoltError::InvalidConfig)?;
 
     let ip_port = IpPort::new(socket_addr.ip().to_string(), socket_addr.port());
@@ -407,6 +753,8 @@ pub fn get_node(addr: &str) -> Result<Node, VoltError> {
         ip_port,
         user: None,
         pass: None,
+        connect_timeout: None,
+        read_timeout: None,
     };
     Node::new(opt)
 }

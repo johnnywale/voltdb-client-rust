@@ -25,6 +25,8 @@ impl InnerPool {
             ip_port: self.opts.0.ip_ports.get(i).cloned().unwrap(),
             pass: self.opts.0.pass.clone(),
             user: self.opts.0.user.clone(),
+            connect_timeout: self.opts.0.connect_timeout,
+            read_timeout: self.opts.0.read_timeout,
         }
     }
     fn get_node(&mut self, idx: usize) -> &mut Node {

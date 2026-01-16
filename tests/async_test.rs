@@ -20,6 +20,8 @@ async fn test_async_node() -> Result<(), VoltError> {
         ip_port: IpPort::new("localhost".to_string(), host_port),
         user: None,
         pass: None,
+        connect_timeout: None,
+        read_timeout: None,
     };
 
     let node = AsyncNode::new(opt).await?;
