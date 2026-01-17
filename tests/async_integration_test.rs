@@ -1,18 +1,15 @@
 extern crate lazy_static;
 
 use std::fs;
-use std::sync::atomic::AtomicPtr;
-use std::sync::atomic::Ordering::Acquire;
 use std::sync::{Arc, Once};
-use std::thread::JoinHandle;
-use std::time::{Instant, SystemTime};
+use std::time::Instant;
 
 use futures::future::join_all;
 use testcontainers::core::WaitFor;
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{GenericImage, ImageExt};
 
-use voltdb_client_rust::async_node::{AsyncNode, async_block_for_result};
+use voltdb_client_rust::async_node::{async_block_for_result, AsyncNode};
 use voltdb_client_rust::*;
 
 static POPULATE: Once = Once::new();

@@ -35,7 +35,7 @@ fn main() -> Result<(), VoltError> {
     }
 
     let hosts = vec![IpPort::new("localhost".to_string(), 21211)];
-    let mut pool = Pool::new(Opts::new(hosts)).unwrap();
+    let pool = Pool::new(Opts::new(hosts)).unwrap();
 
     let mut node = pool.get_conn()?;
     // Create table if not exists.

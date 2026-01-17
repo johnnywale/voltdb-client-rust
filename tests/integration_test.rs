@@ -115,35 +115,55 @@ fn test_multiples_thread() -> Result<(), VoltError> {
     table.advance_row();
     let test: Test = table.map_row();
     assert_eq!(test.t1, Some(true));
-    assert_eq!(test.t2, Some(2 as i16));
-    assert_eq!(test.t3, Some(3 as i32));
-    assert_eq!(test.t4, Some(4 as i64));
-    assert_eq!(test.t5, Some(5 as f64));
+    assert_eq!(test.t2, Some(2i16));
+    assert_eq!(test.t3, Some(3i32));
+    assert_eq!(test.t4, Some(4i64));
+    assert_eq!(test.t5, Some(5f64));
     assert_eq!(test.t6, Some(BigDecimal::from(6)));
     assert_eq!(test.t7, Some("7".to_owned()));
+    // 1. Create an Atomic Reference Counted pointer to a raw AtomicPtr.
+    // We use AtomicPtr to allow multiple threads to access the same memory address of 'node'
+    // simultaneously without Mutex overhead. This is inherently 'unsafe'.
     let rc = Arc::new(AtomicPtr::new(&mut node));
+
     let mut vec: Vec<JoinHandle<_>> = vec![];
     let start = SystemTime::now();
+
+    // 2. Spawn 512 concurrent threads to stress test the connection
     for _ in 0..512 {
         let local = Arc::clone(&rc);
         let handle = thread::spawn(move || unsafe {
+            // 3. Load the raw pointer from the atomic storage with Acquire ordering.
+            // This ensures memory visibility across threads.
             let load = local.load(Acquire);
+
+            // 4. Dereference the raw pointer to call 'query'.
+            // Warning: This circumvents Rust's '&mut' exclusivity rule.
+            // The implementation must handle internal synchronization (like your AtomicBool).
             let res = &(*load)
                 .query("select * from test_types where t1 = 1;")
                 .unwrap();
+
+            // 5. Wait for the response from the background listener thread via MPSC channel.
             let mut table = block_for_result(&res).unwrap();
+
+            // 6. Process the result set (simulating data mapping overhead).
             table.advance_row();
             let _: Test = table.map_row();
         });
         vec.push(handle);
     }
+
+    // 7. Barrier: Wait for all 512 threads to complete their operations.
     for handle in vec {
         handle.join().unwrap();
     }
+
+    // 8. Calculate and print the total elapsed time for all operations.
     let since_the_epoch = SystemTime::now()
         .duration_since(start)
         .expect("Time went backwards");
-    println!("{:?}", since_the_epoch);
+    println!("Total time: {:?}", since_the_epoch);
     node.shutdown()?;
     Ok(())
 }

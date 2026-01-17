@@ -9,7 +9,7 @@
 //! - We spawn one dedicated thread to synchronously read from the TcpStream.
 //! - Each incoming message is dispatched via channels to the rest of the application,
 //!   allowing users to perform asynchronous operations on the received data.
-//! - Using `Arc<Mutex<TcpStream>>` would introduce blocking and contention,
+//! - Using `Mutex<TcpStream>` for single Stream would introduce blocking and contention,
 //!   because locking for each read/write would stall other operations. This design
 //!   avoids that while keeping the network I/O simple and efficient.
 //!
@@ -50,7 +50,7 @@ use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::io::{Read, Write};
 use std::net::{Ipv4Addr, Shutdown, SocketAddr, TcpStream, ToSocketAddrs};
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -285,14 +285,16 @@ pub trait Connection: Sync + Send + 'static {}
 
 /// A single TCP connection to a VoltDB server node.
 ///
-/// `Node` represents a persistent TCP connection that can be used to execute
-/// queries and stored procedures against a VoltDB database. It spawns a
-/// background thread to receive responses asynchronously.
+/// `Node` represents a persistent, stateful TCP connection used to execute
+/// stored procedures and queries against a VoltDB cluster. Each `Node`
+/// maintains its own socket and spawns a dedicated background thread to
+/// asynchronously receive and dispatch responses from the server.
 ///
-/// # Thread Safety
+/// # Concurrency
 ///
-/// The `Node` struct is designed to be used from a single thread at a time.
-/// For concurrent access, use a connection pool via [`crate::Pool`].
+/// `Node` is safe to use concurrently and supports multiple in-flight requests
+/// over the same connection. For automatic reconnection, load balancing, or
+/// managing multiple connections, use [`crate::Pool`].
 ///
 /// # Example
 ///
@@ -307,20 +309,24 @@ pub trait Connection: Sync + Send + 'static {}
 ///     read_timeout: None,
 /// };
 ///
-/// let mut node = Node::new(opt)?;
+/// let node = Node::new(opt)?;
 /// let rx = node.query("SELECT * FROM my_table")?;
 /// let table = block_for_result(&rx)?;
 /// # Ok::<(), voltdb_client_rust::VoltError>(())
 /// ```
 #[allow(dead_code)]
 pub struct Node {
-    tcp_stream: Option<TcpStream>,
+    /// Write-side of the TCP stream, protected by a mutex for thread-safe writes.
+    /// Multiple threads can call query/call_sp concurrently; writes are serialized.
+    write_stream: Mutex<Option<TcpStream>>,
     info: ConnInfo,
     /// Pending requests awaiting responses. Uses Mutex instead of RwLock since
     /// both insert (main thread) and remove (listener thread) require exclusive access.
     requests: Arc<Mutex<PendingRequests>>,
     stop: Arc<Mutex<bool>>,
     counter: AtomicI64,
+    /// Simple atomic lock for write operations. True = locked, False = unlocked.
+    write_lock: AtomicBool,
 }
 
 impl Debug for Node {
@@ -419,16 +425,23 @@ impl Node {
         // Parse auth response using shared protocol code
         let info = parse_auth_response(&all)?;
 
+        // Clone the stream for the read side (listener thread)
+        let read_stream = stream.try_clone()?;
+
         let requests = Arc::new(Mutex::new(HashMap::new()));
-        let mut res = Node {
-            stop: Arc::new(Mutex::new(false)),
-            tcp_stream: Some(stream),
+        let stop = Arc::new(Mutex::new(false));
+
+        // Start the listener thread with the read side
+        Self::start_listener(read_stream, Arc::clone(&requests), Arc::clone(&stop));
+
+        Ok(Node {
+            stop,
+            write_stream: Mutex::new(Some(stream)),
             info,
             requests,
             counter: AtomicI64::new(1),
-        };
-        res.listen()?;
-        Ok(res)
+            write_lock: AtomicBool::new(false),
+        })
     }
     /// Returns the next unique sequence number for request tracking.
     ///
@@ -444,7 +457,7 @@ impl Node {
     ///
     /// # Returns
     /// A receiver that will yield a `VoltTable` containing procedure metadata.
-    pub fn list_procedures(&mut self) -> Result<Receiver<VoltTable>, VoltError> {
+    pub fn list_procedures(&self) -> Result<Receiver<VoltTable>, VoltError> {
         self.call_sp("@SystemCatalog", volt_param!("PROCEDURES"))
     }
 
@@ -465,13 +478,13 @@ impl Node {
     /// #     ip_port: IpPort::new("localhost".to_string(), 21212),
     /// #     user: None, pass: None, connect_timeout: None, read_timeout: None,
     /// # };
-    /// let mut node = Node::new(opt)?;
+    /// let node = Node::new(opt)?;
     /// let rx = node.call_sp("MyProcedure", volt_param![1i32, "test".to_string()])?;
     /// let result = block_for_result(&rx)?;
     /// # Ok::<(), voltdb_client_rust::VoltError>(())
     /// ```
     pub fn call_sp(
-        &mut self,
+        &self,
         query: &str,
         param: Vec<&dyn Value>,
     ) -> Result<Receiver<VoltTable>, VoltError> {
@@ -481,15 +494,23 @@ impl Node {
 
         // Register the response channel before sending the request
         self.requests.lock()?.insert(handle, tx);
-
         let bs = proc.bytes();
-        match self.tcp_stream.as_mut() {
-            None => Err(VoltError::ConnectionNotAvailable),
-            Some(stream) => {
-                stream.write_all(&bs)?;
-                Ok(rx)
+        // Write to stream while holding the lock
+        let result = {
+            let mut stream_guard = self.write_stream.lock()?;
+            match stream_guard.as_mut() {
+                None => Err(VoltError::ConnectionNotAvailable),
+                Some(stream) => {
+                    stream.write_all(&bs)?;
+                    Ok(rx)
+                }
             }
-        }
+        };
+
+        // Release write lock
+        self.write_lock.store(false, Ordering::Release);
+
+        result
     }
 
     /// Uploads a JAR file containing stored procedure classes to VoltDB.
@@ -498,7 +519,7 @@ impl Node {
     ///
     /// # Arguments
     /// * `bs` - The JAR file contents as bytes
-    pub fn upload_jar(&mut self, bs: Vec<u8>) -> Result<Receiver<VoltTable>, VoltError> {
+    pub fn upload_jar(&self, bs: Vec<u8>) -> Result<Receiver<VoltTable>, VoltError> {
         self.call_sp("@UpdateClasses", volt_param!(bs, ""))
     }
 
@@ -520,12 +541,12 @@ impl Node {
     /// #     ip_port: IpPort::new("localhost".to_string(), 21212),
     /// #     user: None, pass: None, connect_timeout: None, read_timeout: None,
     /// # };
-    /// let mut node = Node::new(opt)?;
+    /// let node = Node::new(opt)?;
     /// let rx = node.query("SELECT COUNT(*) FROM users")?;
     /// let result = block_for_result(&rx)?;
     /// # Ok::<(), voltdb_client_rust::VoltError>(())
     /// ```
-    pub fn query(&mut self, sql: &str) -> Result<Receiver<VoltTable>, VoltError> {
+    pub fn query(&self, sql: &str) -> Result<Receiver<VoltTable>, VoltError> {
         let zero_vec: Vec<&dyn Value> = vec![&sql];
         self.call_sp("@AdHoc", zero_vec)
     }
@@ -534,20 +555,35 @@ impl Node {
     ///
     /// This can be used to keep the connection alive or verify connectivity.
     /// The ping response is handled internally and not returned to the caller.
-    pub fn ping(&mut self) -> Result<(), VoltError> {
+    pub fn ping(&self) -> Result<(), VoltError> {
         let zero_vec: Vec<&dyn Value> = Vec::new();
         let mut proc = new_procedure_invocation(PING_HANDLE, false, &zero_vec, "@Ping");
         let bs = proc.bytes();
-        let res = self.tcp_stream.as_mut();
-        match res {
-            None => {
-                return Err(VoltError::ConnectionNotAvailable);
-            }
-            Some(stream) => {
-                stream.write_all(&bs)?;
-            }
+
+        // Acquire write lock (spin until acquired)
+        while self
+            .write_lock
+            .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+            .is_err()
+        {
+            std::hint::spin_loop();
         }
-        Ok(())
+
+        let result = {
+            let mut stream_guard = self.write_stream.lock()?;
+            match stream_guard.as_mut() {
+                None => Err(VoltError::ConnectionNotAvailable),
+                Some(stream) => {
+                    stream.write_all(&bs)?;
+                    Ok(())
+                }
+            }
+        };
+
+        // Release write lock
+        self.write_lock.store(false, Ordering::Release);
+
+        result
     }
 
     /// Reads and processes a single message from the TCP stream.
@@ -599,56 +635,48 @@ impl Node {
     pub fn shutdown(&mut self) -> Result<(), VoltError> {
         let mut stop = self.stop.lock()?;
         *stop = true;
-        let res = self.tcp_stream.as_mut();
-        match res {
-            None => {}
-            Some(stream) => {
-                stream.shutdown(Shutdown::Both)?;
-            }
+
+        let mut stream_guard = self.write_stream.lock()?;
+        if let Some(stream) = stream_guard.take() {
+            stream.shutdown(Shutdown::Both)?;
         }
-        self.tcp_stream = None;
         Ok(())
     }
 
     /// Starts the background listener thread for receiving responses.
-    fn listen(&mut self) -> Result<(), VoltError> {
-        let requests = Arc::clone(&self.requests);
+    ///
+    /// This is a static method that takes ownership of the read-side stream.
+    fn start_listener(
+        mut tcp: TcpStream,
+        requests: Arc<Mutex<PendingRequests>>,
+        stopping: Arc<Mutex<bool>>,
+    ) {
+        thread::spawn(move || {
+            // Reusable buffer to reduce allocation pressure.
+            // Starts with 4KB capacity, grows as needed but rarely shrinks.
+            let mut buffer = Vec::with_capacity(4096);
 
-        match self.tcp_stream.as_mut() {
-            None => Ok(()),
-            Some(stream) => {
-                let mut tcp = stream.try_clone()?;
-                let stopping = Arc::clone(&self.stop);
+            loop {
+                // Check stop flag before blocking on read
+                let should_stop = stopping
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if *should_stop {
+                    break;
+                }
+                drop(should_stop); // Release lock before blocking on I/O
 
-                thread::spawn(move || {
-                    // Reusable buffer to reduce allocation pressure.
-                    // Starts with 4KB capacity, grows as needed but rarely shrinks.
-                    let mut buffer = Vec::with_capacity(4096);
-
-                    loop {
-                        // Check stop flag before blocking on read
-                        let should_stop = stopping
-                            .lock()
-                            .unwrap_or_else(|poisoned| poisoned.into_inner());
-                        if *should_stop {
-                            break;
-                        }
-                        drop(should_stop); // Release lock before blocking on I/O
-
-                        if let Err(err) = Node::job(&mut tcp, &requests, &mut buffer) {
-                            // Only print error if we're not intentionally stopping
-                            let is_stopping = stopping
-                                .lock()
-                                .unwrap_or_else(|poisoned| poisoned.into_inner());
-                            if !*is_stopping {
-                                eprintln!("VoltDB listener error: {}", err);
-                            }
-                        }
+                if let Err(err) = Node::job(&mut tcp, &requests, &mut buffer) {
+                    // Only print error if we're not intentionally stopping
+                    let is_stopping = stopping
+                        .lock()
+                        .unwrap_or_else(|poisoned| poisoned.into_inner());
+                    if !*is_stopping {
+                        eprintln!("VoltDB listener error: {}", err);
                     }
-                });
-                Ok(())
+                }
             }
-        }
+        });
     }
 }
 
@@ -699,9 +727,9 @@ impl Default for ConnInfo {
 /// #     ip_port: IpPort::new("localhost".to_string(), 21212),
 /// #     user: None, pass: None, connect_timeout: None, read_timeout: None,
 /// # };
-/// let mut node = Node::new(opt)?;
+/// let node = Node::new(opt)?;
 /// let rx = node.query("SELECT * FROM users")?;
-/// let table = block_for_result(&rx)?;
+/// let mut table = block_for_result(&rx)?;
 ///
 /// while table.advance_row() {
 ///     // Process rows...

@@ -1,6 +1,4 @@
 use std::sync::Arc;
-use std::sync::atomic::AtomicPtr;
-use std::sync::atomic::Ordering::Acquire;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::SystemTime;
@@ -22,16 +20,18 @@ fn test_pool() -> Result<(), VoltError> {
     let host_port = docker.get_host_port_ipv4(21211).unwrap();
     let host_ip = IpPort::new("localhost".to_string(), host_port);
     let hosts = vec![host_ip];
-    let mut pool = Pool::new(Opts::new(hosts)).unwrap();
-    let rc = Arc::new(AtomicPtr::new(&mut pool));
+
+    // VoltDB connections support concurrent requests via handle-based tracking,
+    // so multiple threads can share the same connection safely.
+    // No Block policy needed - connections are shared, not exclusive.
+    let pool = Arc::new(Pool::new(Opts::new(hosts)).unwrap());
     let mut vec: Vec<JoinHandle<_>> = vec![];
     let start = SystemTime::now();
 
     for _ in 0..512 {
-        let local = Arc::clone(&rc);
-        let handle = thread::spawn(move || unsafe {
-            let pool = local.load(Acquire);
-            let mut c = (*pool).get_conn().unwrap();
+        let pool_clone = Arc::clone(&pool);
+        let handle = thread::spawn(move || {
+            let mut c = pool_clone.get_conn().unwrap();
             let mut table = c.list_procedures().unwrap();
             table.advance_row();
         });
@@ -44,5 +44,14 @@ fn test_pool() -> Result<(), VoltError> {
         .duration_since(start)
         .expect("Time went backwards");
     println!("{:?}", since_the_epoch);
+
+    // Verify pool stats
+    let stats = pool.stats();
+    println!("Pool stats: {:?}", stats);
+    assert_eq!(stats.size, 10);
+    assert_eq!(stats.healthy, 10);
+    assert_eq!(stats.total_requests, 512);
+    assert!(!stats.is_shutdown);
+
     Ok(())
 }
