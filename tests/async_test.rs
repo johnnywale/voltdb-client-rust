@@ -48,7 +48,7 @@ async fn test_async_pool() -> Result<(), VoltError> {
     let hosts = vec![IpPort::new("localhost".to_string(), host_port)];
     let pool = AsyncPool::new(Opts::new(hosts)).await?;
 
-    let conn = pool.get_conn();
+    let mut conn = pool.get_conn().await?;
     let mut table = conn.list_procedures().await?;
     assert!(table.has_error().is_none());
 
@@ -70,7 +70,7 @@ async fn test_async_pool_multiple_queries() -> Result<(), VoltError> {
 
     // Test multiple queries using different connections from the pool
     for _ in 0..10 {
-        let conn = pool.get_conn();
+        let mut conn = pool.get_conn().await?;
         let mut table = conn.list_procedures().await?;
         assert!(table.has_error().is_none());
     }
