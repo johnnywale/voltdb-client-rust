@@ -35,6 +35,12 @@ pub struct VoltTable {
     total_size: i32,
 }
 
+impl VoltTable {
+    pub fn get_row_count(&self) -> i32 {
+        self.num_rows
+    }
+}
+
 impl Value for VoltTable {
     fn get_write_length(&self) -> i32 {
         self.total_size + 5
