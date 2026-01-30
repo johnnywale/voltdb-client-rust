@@ -9,6 +9,7 @@ use testcontainers::{Container, GenericImage, ImageExt};
 
 use voltdb_client_rust::*;
 
+#[allow(dead_code)]
 static SETUP: Once = Once::new();
 static mut VOLTDB_PORT: u16 = 0;
 static TEST_MUTEX: Mutex<()> = Mutex::new(());
@@ -20,12 +21,12 @@ fn setup_voltdb_once() {
         CLEANUP_REGISTERED.get_or_init(|| {
             extern "C" fn cleanup() {
                 // Force stop the container
-                unsafe {
-                    if let Some(container) = VOLTDB_CONTAINER.get() {
-                        container.stop().unwrap();
-                    }
+                if let Some(container) = VOLTDB_CONTAINER.get() {
+                    container.stop().unwrap();
                 }
             }
+            // SAFETY: registering atexit callback is safe
+            #[allow(unused_unsafe)]
             unsafe {
                 libc::atexit(cleanup);
             }
@@ -128,7 +129,7 @@ fn test_get_single_connection() -> Result<(), VoltError> {
     let pool = Pool::new_manual(5, get_opts())?;
 
     let mut conn = pool.get_conn()?;
-    let mut table = conn.list_procedures()?;
+    let table = conn.list_procedures()?;
     assert!(table.get_row_count() >= 0);
 
     Ok(())
@@ -141,7 +142,7 @@ fn test_get_multiple_connections_sequential() -> Result<(), VoltError> {
 
     for i in 0..10 {
         let mut conn = pool.get_conn()?;
-        let mut table = conn.list_procedures()?;
+        let table = conn.list_procedures()?;
         assert!(table.get_row_count() >= 0, "iteration {}", i);
     }
 
@@ -257,7 +258,6 @@ fn test_concurrent_mixed_operations() -> Result<(), VoltError> {
             match result {
                 Ok(_) => {
                     counter.fetch_add(1, Ordering::Relaxed);
-                    ()
                 }
                 Err(e) => panic!("{:?}", e),
             }
@@ -284,7 +284,7 @@ fn test_pool_query_execution() -> Result<(), VoltError> {
     let pool = Pool::new_manual(3, get_opts())?;
 
     let mut conn = pool.get_conn()?;
-    let mut table = conn.call_sp("@GetPartitionKeys", volt_param!("integer"))?;
+    let table = conn.call_sp("@GetPartitionKeys", volt_param!("integer"))?;
     assert!(table.get_row_count() > 0);
 
     Ok(())
@@ -296,7 +296,7 @@ fn test_pool_list_procedures() -> Result<(), VoltError> {
     let pool = Pool::new_manual(3, get_opts())?;
 
     let mut conn = pool.get_conn()?;
-    let mut table = conn.list_procedures()?;
+    let table = conn.list_procedures()?;
 
     assert!(table.get_row_count() >= 0);
 
@@ -311,7 +311,7 @@ fn test_pool_multiple_queries_same_connection() -> Result<(), VoltError> {
     let mut conn = pool.get_conn()?;
 
     for _ in 0..5 {
-        let mut table = conn.call_sp("@GetPartitionKeys", volt_param!("integer"))?;
+        let table = conn.call_sp("@GetPartitionKeys", volt_param!("integer"))?;
         assert!(table.get_row_count() > 0);
     }
 

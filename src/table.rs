@@ -611,25 +611,25 @@ mod tests {
             82, 69, 65, 84, 69, 68, 95, 66, 89, 0, 0, 0, 1, 0, 0, 0, 25, 0, 0, 0, 0, 0, 0, 0, 1, 0,
             0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1,
         ];
-        let header = vec!["ID", "VERSION", "DELETED", "CREATED_BY"];
+        let header = ["ID", "VERSION", "DELETED", "CREATED_BY"];
         let tp = vec![LONG_COLUMN, LONG_COLUMN, TINYINT_COLUMN, LONG_COLUMN];
         let header: Vec<String> = header
             .iter()
             .map(|f| f.to_string())
             .collect::<Vec<String>>();
         let mut x = VoltTable::new_table(tp, header);
-        let data = volt_param! {1 as i64, 1 as i64, false,  1 as i64 };
+        let data = volt_param! {1_i64, 1_i64, false, 1_i64};
         x.add_row(data)?;
         let mut bf = ByteBuffer::new();
         x.marshal(&mut bf);
         assert_eq!(bs, bf.into_vec());
-        Ok({})
+        Ok(())
     }
 
     #[test]
     fn test_table() {
         let bs = vec![
-            0 as u8, 1, 128, 0, 0, 0, 3, 0, 1, 0, 0, 0, 133, 0, 0, 0, 66, 128, 0, 9, 3, 4, 5, 6, 8,
+            0_u8, 1, 128, 0, 0, 0, 3, 0, 1, 0, 0, 0, 133, 0, 0, 0, 66, 128, 0, 9, 3, 4, 5, 6, 8,
             22, 9, 25, 11, 0, 0, 0, 2, 84, 49, 0, 0, 0, 2, 84, 50, 0, 0, 0, 2, 84, 51, 0, 0, 0, 2,
             84, 52, 0, 0, 0, 2, 84, 53, 0, 0, 0, 2, 84, 54, 0, 0, 0, 2, 84, 55, 0, 0, 0, 2, 84, 56,
             0, 0, 0, 2, 84, 57, 0, 0, 0, 1, 0, 0, 0, 55, 128, 128, 0, 128, 0, 0, 0, 128, 0, 0, 0,
@@ -644,7 +644,7 @@ mod tests {
         let header = table.columns();
         assert_eq!(header.len(), 9);
         assert_eq!(
-            *header.get(0).unwrap(),
+            *header.first().unwrap(),
             Column {
                 header_name: "T1".to_owned(),
                 header_type: TINYINT_COLUMN,

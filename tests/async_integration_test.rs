@@ -9,7 +9,7 @@ use testcontainers::core::WaitFor;
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{GenericImage, ImageExt};
 
-use voltdb_client_rust::async_node::{async_block_for_result, AsyncNode};
+use voltdb_client_rust::async_node::{AsyncNode, async_block_for_result};
 use voltdb_client_rust::*;
 
 static POPULATE: Once = Once::new();
@@ -66,7 +66,7 @@ async fn test_async_multiple_tasks() -> Result<(), VoltError> {
     let docker = voltdb.start().await.unwrap();
     let port = docker.get_host_port_ipv4(21211).await.unwrap();
 
-    let mut node = AsyncNode::new(NodeOpt {
+    let node = AsyncNode::new(NodeOpt {
         ip_port: IpPort::new("127.0.0.1".to_string(), port),
         user: None,
         pass: None,
@@ -105,6 +105,7 @@ async fn test_async_multiple_tasks() -> Result<(), VoltError> {
     table.advance_row();
 
     #[derive(Debug)]
+    #[allow(dead_code)]
     struct Test {
         t1: Option<bool>,
         t2: Option<i16>,

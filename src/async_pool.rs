@@ -16,7 +16,6 @@
 
 #![cfg(feature = "tokio")]
 
-use futures::TryFutureExt;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -25,7 +24,7 @@ use tokio::sync::{Mutex, Notify};
 use tokio::time::timeout;
 
 use crate::async_node::{AsyncNode, async_block_for_result};
-use crate::{NodeOpt, Opts, Value, VoltError, VoltTable, block_for_result};
+use crate::{NodeOpt, Opts, Value, VoltError, VoltTable};
 
 // ============================================================================
 // Logging macros - use tracing if available, otherwise no-op
@@ -244,33 +243,23 @@ impl Circuit {
 // ============================================================================
 
 /// What to do when all connections are busy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExhaustionPolicy {
     /// Return error immediately
+    #[default]
     FailFast,
     /// Block up to the specified duration waiting for a connection
     Block { timeout: Duration },
 }
 
-impl Default for ExhaustionPolicy {
-    fn default() -> Self {
-        ExhaustionPolicy::FailFast
-    }
-}
-
 /// How to handle startup connection failures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ValidationMode {
     /// Panic if any connection fails during pool creation
+    #[default]
     FailFast,
     /// Mark failed connections as unhealthy, continue startup
     BestEffort,
-}
-
-impl Default for ValidationMode {
-    fn default() -> Self {
-        ValidationMode::FailFast
-    }
 }
 
 /// Async pool configuration.
@@ -586,7 +575,7 @@ impl AsyncPool {
     }
 
     /// Get a connection from the pool.
-    pub async fn get_conn(&self) -> Result<AsyncPooledConn, VoltError> {
+    pub async fn get_conn(&self) -> Result<AsyncPooledConn<'_>, VoltError> {
         if self.shutdown_flag.load(Ordering::Relaxed) {
             async_pool_warn!("get_conn called on shutdown pool");
             return Err(AsyncPoolError::PoolShutdown.into());
@@ -604,8 +593,11 @@ impl AsyncPool {
         }
     }
 
-    async fn get_conn_failfast(&self, preferred_idx: usize) -> Result<AsyncPooledConn, VoltError> {
-        let mut inner = self.inner.lock().await;
+    async fn get_conn_failfast(
+        &self,
+        preferred_idx: usize,
+    ) -> Result<AsyncPooledConn<'_>, VoltError> {
+        let inner = self.inner.lock().await;
 
         if inner.phase != PoolPhase::Running {
             return Err(AsyncPoolError::PoolShutdown.into());
@@ -642,7 +634,7 @@ impl AsyncPool {
         let deadline = Instant::now() + wait_timeout;
 
         loop {
-            let mut inner = self.inner.lock().await;
+            let inner = self.inner.lock().await;
 
             if inner.phase != PoolPhase::Running {
                 return Err(AsyncPoolError::PoolShutdown.into());
@@ -681,7 +673,7 @@ impl AsyncPool {
         &self,
         inner: &AsyncInnerPool,
         idx: usize,
-    ) -> Result<AsyncPooledConn, VoltError> {
+    ) -> Result<AsyncPooledConn<'_>, VoltError> {
         let node = Arc::clone(&inner.nodes[idx]);
         let config = inner.config.clone();
         let host_idx = inner.slots[idx].host_idx;
@@ -699,7 +691,12 @@ impl AsyncPool {
 
     /// Report a fatal error on a connection slot
     async fn report_fatal_error(&self, idx: usize) {
-        let reconnect_info: Option<(Arc<Mutex<Option<AsyncNode>>>, NodeOpt, AsyncPoolConfig)>;
+        #[allow(clippy::type_complexity)]
+        let reconnect_info: Option<(
+            Arc<Mutex<Option<AsyncNode>>>,
+            NodeOpt,
+            AsyncPoolConfig,
+        )>;
 
         {
             let mut inner = self.inner.lock().await;

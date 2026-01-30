@@ -1,8 +1,8 @@
-name: Rust
+name: CI
 
 on:
   push:
-    branches: [ main, dev, pool ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
@@ -10,116 +10,154 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-and-test:
+  # Format check - runs quickly, fail fast
+  fmt:
+    name: Formatting
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Build (sync)
-        run: cargo build --verbose
-
-      - name: Build (with tokio)
-        run: cargo build --verbose --features tokio
-
-      - name: Run unit tests
-        run: cargo test --verbose --test unit_test
-
-      - name: Run library tests
-        run: cargo test --verbose --lib
-
-      - name: Run integration tests
-        run: cargo test --verbose --test integration_test
-
-      - name: Run pool tests
-        run: cargo test --verbose --test pool_test
-
-      - name: Run async tests
-        run: cargo test --verbose --features tokio --test async_test
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-
-      - name: Run Clippy (sync)
-        run: cargo clippy -- -D warnings
-        continue-on-error: true
-
-      - name: Run Clippy (with tokio)
-        run: cargo clippy --features tokio -- -D warnings
-        continue-on-error: true
-
-  format:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-
       - name: Check formatting
-        run: cargo fmt --check
-        continue-on-error: true
+        run: cargo fmt -- --check
 
-  coverage:
+  # Clippy lint check
+  clippy:
+    name: Clippy
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-tarpaulin
-        run: cargo install cargo-tarpaulin
-
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-coverage-${{ hashFiles('**/Cargo.lock') }}
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-clippy-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-clippy-
+      - name: Run clippy
+        run: cargo clippy --all-features --all-targets -- -D warnings
 
-      - name: Run coverage (all tests including integration)
-        run: cargo tarpaulin --features tokio --out Xml --output-dir target/tarpaulin -- --test-threads=1
-        continue-on-error: true
-
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+  # Documentation build
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
         with:
-          files: target/tarpaulin/cobertura.xml
-          fail_ci_if_error: false
-          verbose: true
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-docs-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-docs-
+      - name: Build documentation
+        run: cargo doc --no-deps --all-features
         env:
-          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+          RUSTDOCFLAGS: -D warnings
 
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+  # Dependency audit
+  audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-deny
+        run: cargo install cargo-deny --locked
+      - name: Run cargo deny
+        run: cargo deny check
+
+  # MSRV check - verify library compiles with minimum supported Rust version
+  msrv:
+    name: MSRV (1.85.0)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - name: Cache cargo
+        uses: actions/cache@v4
         with:
-          name: coverage-report
-          path: target/tarpaulin/
-          retention-days: 30
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-msrv-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-msrv-
+      # Only check library compilation (dev-dependencies may require newer Rust)
+      - name: Check library compiles
+        run: cargo check --lib --all-features
+
+  # Main test suite - multi-platform
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+
+      # Run all tests on Linux (has Docker support for integration tests)
+      # Use --test-threads=1 to run sequentially (tests share VoltDB instance)
+      - name: Run all tests (Linux)
+        if: runner.os == 'Linux'
+        run: cargo test --all-features -- --test-threads=1
+
+      # Run only unit tests and lib tests on Windows/macOS (no Docker support)
+      - name: Run unit tests (Windows/macOS)
+        if: runner.os != 'Linux'
+        run: cargo test --all-features --lib --test unit_test
+
+  # Feature combinations test
+  features:
+    name: Feature Combinations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-features-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-features-
+      - name: Test no default features (sync only)
+        run: cargo check --no-default-features
+      - name: Test with tokio only
+        run: cargo check --no-default-features --features "tokio"
+      - name: Test with tracing
+        run: cargo check --features "tracing"
+      - name: Test with metrics
+        run: cargo check --features "metrics"
+      - name: Test all features
+        run: cargo check --all-features

@@ -614,6 +614,7 @@ mod tests {
 
     #[test]
     fn test_option_f64_marshal_some() {
+        #[allow(clippy::approx_constant)]
         let val: Option<f64> = Some(3.14159);
         let mut buf = ByteBuffer::new();
         val.marshal(&mut buf);

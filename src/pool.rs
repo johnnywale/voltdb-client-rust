@@ -14,10 +14,10 @@
 //! - Each Node has its own lock for I/O operations
 //! - Network I/O never holds the pool lock
 
+use std::fmt;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-use std::fmt;
 
 use crate::{Node, NodeOpt, Opts, Value, VoltError, VoltTable, block_for_result, node};
 
@@ -236,33 +236,23 @@ impl Circuit {
 // ============================================================================
 
 /// What to do when all connections are busy.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ExhaustionPolicy {
     /// Return error immediately
+    #[default]
     FailFast,
     /// Block up to the specified duration waiting for a connection
     Block { timeout: Duration },
 }
 
-impl Default for ExhaustionPolicy {
-    fn default() -> Self {
-        ExhaustionPolicy::FailFast
-    }
-}
-
 /// How to handle startup connection failures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ValidationMode {
     /// Panic if any connection fails during pool creation
+    #[default]
     FailFast,
     /// Mark failed connections as unhealthy, continue startup
     BestEffort,
-}
-
-impl Default for ValidationMode {
-    fn default() -> Self {
-        ValidationMode::FailFast
-    }
 }
 
 /// Pool configuration.
@@ -514,10 +504,7 @@ impl InnerPool {
     }
 
     fn healthy_count(&self) -> usize {
-        self.slots
-            .iter()
-            .filter(|s| s.state.is_healthy())
-            .count()
+        self.slots.iter().filter(|s| s.state.is_healthy()).count()
     }
 
     fn update_metrics(&self) {
@@ -617,9 +604,7 @@ impl Pool {
 
     fn get_conn_failfast(&self, preferred_idx: usize) -> Result<PooledConn<'_>, VoltError> {
         let (lock, _cvar) = &*self.inner;
-        let mut inner = lock
-            .lock()
-            .map_err(|_| PoolError::LockPoisoned)?;
+        let inner = lock.lock().map_err(|_| PoolError::LockPoisoned)?;
 
         if inner.phase != PoolPhase::Running {
             return Err(PoolError::PoolShutdown.into());
@@ -627,7 +612,7 @@ impl Pool {
 
         // Try preferred index first
         if inner.slots[preferred_idx].is_available() {
-            return self.checkout_slot(&mut inner, preferred_idx);
+            return self.checkout_slot(&inner, preferred_idx);
         }
 
         // Try to find any usable connection (with health-aware rotation)
@@ -639,7 +624,7 @@ impl Pool {
                     actual = idx,
                     "using alternate connection"
                 );
-                return self.checkout_slot(&mut inner, idx);
+                return self.checkout_slot(&inner, idx);
             }
         }
 
@@ -665,14 +650,14 @@ impl Pool {
 
             // Try preferred index first
             if inner.slots[preferred_idx].is_available() {
-                return self.checkout_slot(&mut inner, preferred_idx);
+                return self.checkout_slot(&inner, preferred_idx);
             }
 
             // Try any available connection
             for i in 1..self.config.size {
                 let idx = (preferred_idx + i) % self.config.size;
                 if inner.slots[idx].is_available() {
-                    return self.checkout_slot(&mut inner, idx);
+                    return self.checkout_slot(&inner, idx);
                 }
             }
 
@@ -721,6 +706,7 @@ impl Pool {
         let (lock, cvar) = &*self.inner;
 
         // Variables for reconnection (populated inside lock, used outside)
+        #[allow(clippy::type_complexity)]
         let mut reconnect_info: Option<(Arc<Mutex<Option<Node>>>, NodeOpt, PoolConfig)> = None;
 
         if let Ok(mut inner) = lock.lock() {
@@ -905,7 +891,6 @@ impl fmt::Debug for PooledConn<'_> {
     }
 }
 
-
 impl PooledConn<'_> {
     /// Execute a SQL query.
     pub fn query(&mut self, sql: &str) -> Result<VoltTable, VoltError> {
@@ -949,7 +934,11 @@ impl PooledConn<'_> {
 
     /// Call a stored procedure with parameters.
     pub fn call_sp(&mut self, proc: &str, params: Vec<&dyn Value>) -> Result<VoltTable, VoltError> {
-        pool_trace!(slot = self.idx, procedure = proc, "calling stored procedure");
+        pool_trace!(
+            slot = self.idx,
+            procedure = proc,
+            "calling stored procedure"
+        );
 
         let mut node_guard = self
             .node
@@ -960,7 +949,9 @@ impl PooledConn<'_> {
             .as_mut()
             .ok_or(VoltError::ConnectionNotAvailable)?;
 
-        let result = node.call_sp(proc, params).and_then(|r| block_for_result(&r));
+        let result = node
+            .call_sp(proc, params)
+            .and_then(|r| block_for_result(&r));
         drop(node_guard);
 
         self.handle_result(&result);
@@ -1027,7 +1018,12 @@ mod tests {
     #[test]
     fn test_conn_state_is_healthy() {
         assert!(ConnState::Healthy.is_healthy());
-        assert!(!ConnState::Unhealthy { since: Instant::now() }.is_healthy());
+        assert!(
+            !ConnState::Unhealthy {
+                since: Instant::now()
+            }
+            .is_healthy()
+        );
         assert!(!ConnState::Reconnecting.is_healthy());
     }
 

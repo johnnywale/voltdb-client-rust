@@ -620,8 +620,7 @@ mod tests {
 
     #[test]
     fn test_encoding_proc() {
-        let mut zero_vec: Vec<&dyn Value> = Vec::new();
-        zero_vec.push(&"select * from account limit 1;");
+        let zero_vec: Vec<&dyn Value> = vec![&"select * from account limit 1;"];
 
         let mut proc = new_procedure_invocation(1, false, &zero_vec, "@AdHoc");
         let bs = proc.bytes();
@@ -644,7 +643,7 @@ mod tests {
     #[test]
     fn test_big_decimal() {
         let bs: Vec<u8> = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 90, 243, 16, 122, 64, 0];
-        let int = BigInt::from_signed_bytes_be(&*bs);
+        let int = BigInt::from_signed_bytes_be(&bs);
         let decimal = BigDecimal::new(int, 12);
         let (b, _) = decimal.into_bigint_and_exponent();
         let b = b.to_signed_bytes_be();
@@ -954,6 +953,7 @@ mod tests {
 
     #[test]
     fn test_f64_marshal() {
+        #[allow(clippy::approx_constant)]
         let val: f64 = 3.14159;
         let mut buf = ByteBuffer::new();
         val.marshal(&mut buf);
@@ -1041,6 +1041,7 @@ mod tests {
 
     #[test]
     fn test_f64_to_value_string() {
+        #[allow(clippy::approx_constant)]
         let val: f64 = 3.14;
         assert!(val.to_value_string().starts_with("3.14"));
     }
@@ -1092,6 +1093,7 @@ mod tests {
             header_name: "test".to_string(),
             header_type: FLOAT_COLUMN,
         };
+        #[allow(clippy::approx_constant)]
         let original: f64 = 3.14159;
         let mut buf = ByteBuffer::new();
         original.marshal_in_table(&mut buf, FLOAT_COLUMN);

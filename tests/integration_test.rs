@@ -25,12 +25,11 @@ fn setup_voltdb_once() {
         CLEANUP_REGISTERED.get_or_init(|| {
             extern "C" fn cleanup() {
                 // Force stop the container
-                unsafe {
-                    if let Some(container) = VOLTDB_CONTAINER.get() {
-                        container.stop().unwrap();
-                    }
+                if let Some(container) = VOLTDB_CONTAINER.get() {
+                    container.stop().unwrap();
                 }
             }
+            // SAFETY: registering atexit callback is safe
             unsafe {
                 libc::atexit(cleanup);
             }
@@ -82,9 +81,8 @@ fn populate(node: &mut Node) {
 fn execute_success(node: &mut Node, sql: &str) {
     let x = node.query(sql).unwrap();
     let mut table = x.recv().unwrap();
-    let err = table.has_error();
-    if err.is_some() {
-        panic!("err {:?} ", err.unwrap())
+    if let Some(err) = table.has_error() {
+        panic!("err {:?} ", err)
     }
 }
 
@@ -92,7 +90,7 @@ fn get_test_node() -> Node {
     setup_voltdb_once();
     let url = "localhost";
     let port = unsafe { VOLTDB_PORT };
-    get_node(&*format!("{}:{}", url, port)).unwrap()
+    get_node(&format!("{}:{}", url, port)).unwrap()
 }
 
 #[derive(Debug, PartialEq)]
@@ -152,7 +150,7 @@ fn test_invalid_connection() {
 #[test]
 fn test_table_creation() -> Result<(), VoltError> {
     let _guard = TEST_MUTEX.lock().unwrap();
-    let mut node = get_test_node();
+    let node = get_test_node();
 
     let create = "CREATE TABLE simple_test (id INTEGER, name VARCHAR);";
     let result = node.query(create);
@@ -215,7 +213,7 @@ fn test_query_with_no_results() -> Result<(), VoltError> {
     let mut node = get_test_node();
     populate(&mut node);
 
-    let mut table = block_for_result(&node.query("select * from test_types where t1 = 99;")?)?;
+    let table = block_for_result(&node.query("select * from test_types where t1 = 99;")?)?;
     assert_eq!(table.get_row_count(), 0);
 
     Ok(())
@@ -261,10 +259,10 @@ fn test_update_operation() -> Result<(), VoltError> {
     // Clear and insert fresh data
     execute_success(&mut node, "delete from test_types where t2 = 5000;");
     let insert = "insert into test_types (T1,T2,T3) values (1,5000,200);";
-    execute_success(&mut node, &insert);
+    execute_success(&mut node, insert);
 
     let update = "update test_types set T3 = 999 where T2 = 5000;";
-    execute_success(&mut node, &update);
+    execute_success(&mut node, update);
 
     let mut table = block_for_result(&node.query("select T3 from test_types where T2 = 5000;")?)?;
     assert!(table.get_row_count() > 0);
@@ -285,9 +283,9 @@ fn test_delete_operation() -> Result<(), VoltError> {
     execute_success(&mut node, insert);
 
     let delete = "delete from test_types where T2 = 6000;";
-    execute_success(&mut node, &delete);
+    execute_success(&mut node, delete);
 
-    let mut table = block_for_result(&node.query("select * from test_types where T2 = 6000;")?)?;
+    let table = block_for_result(&node.query("select * from test_types where T2 = 6000;")?)?;
     assert_eq!(table.get_row_count(), 0);
 
     Ok(())
@@ -347,7 +345,7 @@ fn test_empty_string_and_binary() -> Result<(), VoltError> {
     execute_success(&mut node, "delete from test_types where t2 = 8000;");
 
     let insert = "insert into test_types (T1,T2,T7,T8) values (1,8000,'','');";
-    execute_success(&mut node, &insert);
+    execute_success(&mut node, insert);
 
     let mut table =
         block_for_result(&node.query("select T7,T8 from test_types where T2 = 8000;")?)?;
@@ -368,7 +366,7 @@ fn test_concurrent_reads() -> Result<(), VoltError> {
     // Clear and insert fresh data
     execute_success(&mut node, "delete from test_types where t2 = 9000;");
     let insert = "insert into test_types (T1,T2) values (1,9000);";
-    execute_success(&mut node, &insert);
+    execute_success(&mut node, insert);
 
     let rc = Arc::new(AtomicPtr::new(&mut node));
     let mut handles = vec![];
@@ -377,7 +375,7 @@ fn test_concurrent_reads() -> Result<(), VoltError> {
         let local = Arc::clone(&rc);
         let handle = thread::spawn(move || unsafe {
             let load = local.load(Acquire);
-            let res = &(*load)
+            let res = (*load)
                 .query("select T2 from test_types where T2 = 9000;")
                 .unwrap();
             let mut table = block_for_result(&res).unwrap();
@@ -431,7 +429,7 @@ fn test_multiples_thread() -> Result<(), VoltError> {
         let local = Arc::clone(&rc);
         let handle = thread::spawn(move || unsafe {
             let load = local.load(Acquire);
-            let res = &(*load)
+            let res = (*load)
                 .query("select * from test_types where t1 = 1;")
                 .unwrap();
             let mut table = block_for_result(&res).unwrap();
@@ -470,7 +468,7 @@ fn test_stored_procedure_execution() -> Result<(), VoltError> {
 #[test]
 fn test_jar_upload() -> Result<(), VoltError> {
     let _guard = TEST_MUTEX.lock().unwrap();
-    let mut node = get_test_node();
+    let node = get_test_node();
 
     let jars = fs::read("tests/procedures.jar").unwrap();
     let x = node.upload_jar(jars).unwrap();
@@ -509,7 +507,7 @@ fn test_decimal_precision() -> Result<(), VoltError> {
     execute_success(&mut node, "delete from test_types where t2 = 11000;");
 
     let insert = "insert into test_types (T1,T2,T6) values (1,11000,123.456789);";
-    execute_success(&mut node, &insert);
+    execute_success(&mut node, insert);
 
     let mut table = block_for_result(&node.query("select T6 from test_types where T2 = 11000;")?)?;
     assert!(table.get_row_count() > 0);
@@ -530,7 +528,7 @@ fn test_timestamp_operations() -> Result<(), VoltError> {
     execute_success(&mut node, "delete from test_types where t2 = 12000;");
 
     let insert = "insert into test_types (T1,T2,T9) values (1,12000,NOW());";
-    execute_success(&mut node, &insert);
+    execute_success(&mut node, insert);
 
     let mut table = block_for_result(&node.query("select T9 from test_types where T2 = 12000;")?)?;
     assert!(table.get_row_count() > 0);
@@ -544,7 +542,7 @@ fn test_timestamp_operations() -> Result<(), VoltError> {
 #[test]
 fn test_query_error_handling() -> Result<(), VoltError> {
     let _guard = TEST_MUTEX.lock().unwrap();
-    let mut node = get_test_node();
+    let node = get_test_node();
 
     let result = node.query("SELECT * FROM non_existent_table;");
     assert!(result.is_ok()); // Query sends successfully

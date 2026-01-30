@@ -63,6 +63,7 @@ mod encode_primitive_tests {
 
     #[test]
     fn test_f64_marshal() {
+        #[allow(clippy::approx_constant)]
         let val: f64 = 3.14159;
         let mut buffer = ByteBuffer::new();
         val.marshal(&mut buffer);
@@ -259,6 +260,7 @@ mod macro_tests {
     fn test_volt_param_multiple() {
         let a = 1i32;
         let b = "hello".to_string();
+        #[allow(clippy::approx_constant)]
         let c = 3.14f64;
         let params = volt_param![a, b, c];
         assert_eq!(params.len(), 3);
@@ -314,7 +316,7 @@ mod table_tests {
         let mut table = VoltTable::new_table(types, headers);
 
         for i in 0..5 {
-            let val = i as i32;
+            let val = i;
             table.add_row(volt_param![val]).unwrap();
         }
         // Table should have 5 rows
@@ -341,8 +343,7 @@ mod node_config_tests {
     #[test]
     fn test_ip_port_new() {
         let _ip_port = IpPort::new("localhost".to_string(), 21211);
-        // Just verify it can be created
-        assert!(true);
+        // Verify it can be created (fields are private)
     }
 
     #[test]
@@ -353,7 +354,6 @@ mod node_config_tests {
         ];
         let _opts = Opts::new(hosts);
         // Verify opts can be created with multiple hosts
-        assert!(true);
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod from_bytes_tests {
         let bytes = vec![1u8];
         let col = dummy_column();
         let result: bool = bool::from_bytes(bytes, &col).unwrap();
-        assert_eq!(result, true);
+        assert!(result);
     }
 
     #[test]
@@ -560,7 +560,7 @@ mod from_bytes_tests {
         let bytes = vec![0u8];
         let col = dummy_column();
         let result: bool = bool::from_bytes(bytes, &col).unwrap();
-        assert_eq!(result, false);
+        assert!(!result);
     }
 }
 

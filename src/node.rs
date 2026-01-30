@@ -472,14 +472,16 @@ impl Node {
     ///
     /// # Example
     /// ```no_run
-    /// use voltdb_client_rust::{Node, NodeOpt, IpPort, block_for_result, volt_param};
+    /// use voltdb_client_rust::{Node, NodeOpt, IpPort, Value, block_for_result, volt_param};
     ///
     /// # let opt = NodeOpt {
     /// #     ip_port: IpPort::new("localhost".to_string(), 21212),
     /// #     user: None, pass: None, connect_timeout: None, read_timeout: None,
     /// # };
     /// let node = Node::new(opt)?;
-    /// let rx = node.call_sp("MyProcedure", volt_param![1i32, "test".to_string()])?;
+    /// let id = 1i32;
+    /// let name = "test".to_string();
+    /// let rx = node.call_sp("MyProcedure", volt_param![id, name])?;
     /// let result = block_for_result(&rx)?;
     /// # Ok::<(), voltdb_client_rust::VoltError>(())
     /// ```

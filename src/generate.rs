@@ -426,7 +426,9 @@ mod tests {
         let result = table.get_f64_by_idx(4).unwrap();
         assert!(result.is_some());
         let val = result.unwrap();
-        assert!((val - 3.14159).abs() < 0.0001);
+        #[allow(clippy::approx_constant)]
+        let expected = 3.14159;
+        assert!((val - expected).abs() < 0.0001);
     }
 
     #[test]
@@ -548,6 +550,8 @@ mod tests {
         let result = table.get_f64_by_column("T5").unwrap();
         assert!(result.is_some());
         let val = result.unwrap();
-        assert!((val - 3.14159).abs() < 0.0001);
+        #[allow(clippy::approx_constant)]
+        let expected = 3.14159;
+        assert!((val - expected).abs() < 0.0001);
     }
 }

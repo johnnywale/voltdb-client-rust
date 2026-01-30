@@ -196,7 +196,6 @@ mod tests {
     #[test]
     fn test_ping_handle_constant() {
         // PING_HANDLE should be a large positive value (1 << 62)
-        assert!(PING_HANDLE > 0);
         // 1 << 63 - 1 is parsed as 1 << (63-1) = 1 << 62 due to operator precedence
         assert_eq!(PING_HANDLE, 1i64 << 62);
     }

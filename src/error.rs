@@ -353,7 +353,7 @@ mod tests {
     // std::error::Error trait tests
     #[test]
     fn test_connection_error_source() {
-        let io_err = io::Error::new(io::ErrorKind::Other, "test");
+        let io_err = io::Error::other("test");
         let conn_err = ConnectionError::Io(io_err);
         assert!(conn_err.source().is_some());
 

@@ -193,7 +193,6 @@ pub use crate::async_node::{AsyncNode, async_block_for_result};
 #[cfg(feature = "tokio")]
 pub use crate::async_pool::{AsyncPool, AsyncPooledConn};
 
-
 #[macro_export]
 macro_rules! volt_param {
     () => (
