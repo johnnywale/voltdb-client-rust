@@ -66,6 +66,19 @@ use crate::response::VoltResponseInfo;
 use crate::table::{VoltTable, new_volt_table};
 use crate::volt_param;
 
+// ============================================================================
+// Logging macros - use tracing if available, otherwise no-op
+// ============================================================================
+
+#[cfg(feature = "tracing")]
+macro_rules! node_error {
+    ($($arg:tt)*) => { tracing::error!($($arg)*) };
+}
+#[cfg(not(feature = "tracing"))]
+macro_rules! node_error {
+    ($($arg:tt)*) => {};
+}
+
 /// Connection options for VoltDB client.
 ///
 /// This struct encapsulates all configuration options needed to establish
@@ -340,8 +353,8 @@ impl Drop for Node {
         let res = self.shutdown();
         match res {
             Ok(_) => {}
-            Err(e) => {
-                eprintln!("{:?}", e);
+            Err(_e) => {
+                node_error!(error = ?_e, "error during node shutdown");
             }
         }
     }
@@ -668,13 +681,13 @@ impl Node {
                 }
                 drop(should_stop); // Release lock before blocking on I/O
 
-                if let Err(err) = Node::job(&mut tcp, &requests, &mut buffer) {
-                    // Only print error if we're not intentionally stopping
+                if let Err(_err) = Node::job(&mut tcp, &requests, &mut buffer) {
+                    // Only log error if we're not intentionally stopping
                     let is_stopping = stopping
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
                     if !*is_stopping {
-                        eprintln!("VoltDB listener error: {}", err);
+                        node_error!(error = %_err, "VoltDB listener error");
                     }
                 }
             }

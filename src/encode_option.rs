@@ -440,9 +440,9 @@ impl Value for Option<Vec<u8>> {
             let res: Option<Vec<u8>> = Option::None;
             return Ok(res);
         }
-        let mut cp = bs.clone();
-        cp.drain(0..4);
-        Ok(Option::Some(cp))
+        let mut bs = bs;
+        bs.drain(0..4);
+        Ok(Option::Some(bs))
     }
 }
 

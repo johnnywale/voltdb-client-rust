@@ -446,15 +446,21 @@ impl fmt::Debug for AsyncInnerPool {
 }
 
 impl AsyncInnerPool {
-    fn node_opt(&self, host_idx: usize) -> NodeOpt {
-        let ip_port = self.opts.0.ip_ports.get(host_idx).cloned().unwrap();
-        NodeOpt {
+    fn node_opt(&self, host_idx: usize) -> Result<NodeOpt, VoltError> {
+        let ip_port = self
+            .opts
+            .0
+            .ip_ports
+            .get(host_idx)
+            .cloned()
+            .ok_or(VoltError::InvalidConfig)?;
+        Ok(NodeOpt {
             ip_port,
             pass: self.opts.0.pass.clone(),
             user: self.opts.0.user.clone(),
             connect_timeout: self.opts.0.connect_timeout,
             read_timeout: self.opts.0.read_timeout,
-        }
+        })
     }
 
     async fn new(opts: Opts, config: AsyncPoolConfig) -> Result<Self, VoltError> {
@@ -469,7 +475,7 @@ impl AsyncInnerPool {
 
         for i in 0..config.size {
             let host_idx = i % num_hosts;
-            let node_opt = inner.node_opt(host_idx);
+            let node_opt = inner.node_opt(host_idx)?;
 
             async_pool_debug!(slot = i, host = host_idx, "creating connection");
 
@@ -712,12 +718,14 @@ impl AsyncPool {
                 if inner.slots[idx].needs_reconnect(backoff) {
                     let node_arc = Arc::clone(&inner.nodes[idx]);
                     let host_idx = inner.slots[idx].host_idx;
-                    let node_opt = inner.node_opt(host_idx);
+                    if let Ok(node_opt) = inner.node_opt(host_idx) {
+                        inner.slots[idx].state = ConnState::Reconnecting;
+                        inner.slots[idx].last_reconnect_attempt = Some(Instant::now());
 
-                    inner.slots[idx].state = ConnState::Reconnecting;
-                    inner.slots[idx].last_reconnect_attempt = Some(Instant::now());
-
-                    reconnect_info = Some((node_arc, node_opt, config));
+                        reconnect_info = Some((node_arc, node_opt, config));
+                    } else {
+                        reconnect_info = None;
+                    }
                 } else {
                     reconnect_info = None;
                 }

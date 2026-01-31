@@ -1,3 +1,18 @@
+//! Basic usage example for voltdb-client-rust
+//!
+//! This example demonstrates:
+//! - Connecting to VoltDB via connection pool
+//! - Creating tables and inserting data
+//! - Querying data and mapping to structs
+//! - Calling stored procedures with parameters
+//! - Uploading JAR files and creating procedures
+//! - Using VoltTable as a procedure parameter
+//!
+//! Run with: cargo run --example basic_usage
+//!
+//! Requirements: VoltDB server running on localhost:21211
+//! Start with: docker run -d -p 21212:21212 -p 21211:21211 basvanbeek/voltdb-community:9.2.1
+
 use std::fs;
 use std::time::SystemTime;
 

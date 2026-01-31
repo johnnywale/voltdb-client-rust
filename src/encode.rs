@@ -570,9 +570,9 @@ impl Value for Vec<u8> {
         if bs == NULL_VARCHAR {
             return Err(VoltError::UnexpectedNull(_column.header_name.clone()));
         }
-        let mut cp = bs.clone();
-        cp.drain(0..4);
-        Ok(cp)
+        let mut bs = bs;
+        bs.drain(0..4);
+        Ok(bs)
     }
 }
 

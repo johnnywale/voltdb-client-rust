@@ -87,8 +87,10 @@ async fn test_async_multiple_tasks() -> Result<(), VoltError> {
             "insert into test_types (T1,T2,T3,T4,T5,T6,T7,T8,T9) values (1,2,3,4,5,6,'7','8',NOW());",
         )
         .await?;
-    let mut table = async_block_for_result(&mut rx).await?;
-    assert!(table.has_error().is_some());
+    // This query has an invalid varbinary format and should return an error.
+    // async_block_for_result now properly propagates table errors as Err.
+    let result = async_block_for_result(&mut rx).await;
+    assert!(result.is_err());
 
     execute_success(
         &node,

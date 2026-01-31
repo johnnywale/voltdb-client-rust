@@ -38,6 +38,10 @@ testcontainers = { version = "0.26", features = ["blocking"] }
 lazy_static = "1.4.0"
 tokio = { version = "1.35", features = ["full"] }
 
+[[example]]
+name = "basic_usage"
+path = "examples/basic_usage.rs"
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]

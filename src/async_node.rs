@@ -19,6 +19,48 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, watch};
 use tokio::time::timeout;
 
+// ============================================================================
+// Logging macros - use tracing if available, otherwise no-op
+// ============================================================================
+
+#[cfg(feature = "tracing")]
+#[allow(unused_macros)]
+macro_rules! async_node_trace {
+    ($($arg:tt)*) => { tracing::trace!($($arg)*) };
+}
+#[cfg(not(feature = "tracing"))]
+#[allow(unused_macros)]
+macro_rules! async_node_trace {
+    ($($arg:tt)*) => {};
+}
+
+#[cfg(feature = "tracing")]
+macro_rules! async_node_debug {
+    ($($arg:tt)*) => { tracing::debug!($($arg)*) };
+}
+#[cfg(not(feature = "tracing"))]
+macro_rules! async_node_debug {
+    ($($arg:tt)*) => {};
+}
+
+#[cfg(feature = "tracing")]
+macro_rules! async_node_warn {
+    ($($arg:tt)*) => { tracing::warn!($($arg)*) };
+}
+#[cfg(not(feature = "tracing"))]
+macro_rules! async_node_warn {
+    ($($arg:tt)*) => {};
+}
+
+#[cfg(feature = "tracing")]
+macro_rules! async_node_error {
+    ($($arg:tt)*) => { tracing::error!($($arg)*) };
+}
+#[cfg(not(feature = "tracing"))]
+macro_rules! async_node_error {
+    ($($arg:tt)*) => {};
+}
+
 /// 配置常量
 const MAX_MESSAGE_SIZE: usize = 50 * 1024 * 1024; // 50MB消息上限
 const WRITE_BUFFER_SIZE: usize = 1024; // 写入队列容量
@@ -275,16 +317,16 @@ impl AsyncNode {
                                 }
 
                                 // 批量写入
-                                if let Err(e) = write_half.write_all(&batch_buffer).await {
-                                    eprintln!("Write error: {}", e);
+                                if let Err(_e) = write_half.write_all(&batch_buffer).await {
+                                    async_node_error!(error = %_e, "write error");
                                     break;
                                 }
                                 batch_buffer.clear();
                             }
                             Some(WriteCommand::Flush) => {
                                 if !batch_buffer.is_empty() {
-                                    if let Err(e) = write_half.write_all(&batch_buffer).await {
-                                        eprintln!("Flush error: {}", e);
+                                    if let Err(_e) = write_half.write_all(&batch_buffer).await {
+                                        async_node_error!(error = %_e, "flush error");
                                         break;
                                     }
                                     batch_buffer.clear();
@@ -297,7 +339,7 @@ impl AsyncNode {
                 }
             }
 
-            eprintln!("Writer task terminated");
+            async_node_debug!("writer task terminated");
         });
     }
 
@@ -315,9 +357,9 @@ impl AsyncNode {
                         }
                     }
                     result = Self::async_job(&mut read_half, &requests, &pending_requests) => {
-                        if let Err(e) = result {
+                        if let Err(_e) = result {
                             if !*stop_rx.borrow() {
-                                eprintln!("Read error: {}", e);
+                                async_node_error!(error = %_e, "read error");
                             }
                             break "connection error";
                         }
@@ -359,10 +401,13 @@ impl AsyncNode {
 
                         // 清理超时请求
                         for handle in expired {
-                            if let Some((_, req)) = requests.remove(&handle) {
+                            if let Some((_, _req)) = requests.remove(&handle) {
                                 pending_requests.fetch_sub(1, Ordering::Relaxed);
-                                eprintln!("Request {} timed out after {:?}", handle,
-                                    now.duration_since(req.created_at));
+                                async_node_warn!(
+                                    handle = handle,
+                                    elapsed = ?now.duration_since(_req.created_at),
+                                    "request timed out"
+                                );
                                 // channel drop 会通知调用者
                             }
                         }
@@ -419,14 +464,14 @@ impl AsyncNode {
                     Ok(table) => {
                         let _ = req.channel.send(table).await;
                     }
-                    Err(e) => {
-                        eprintln!("Parse error for handle {}: {}", handle, e);
+                    Err(_e) => {
+                        async_node_error!(handle = handle, error = %_e, "parse error");
                         // channel drop 会通知调用者
                     }
                 }
             });
         } else {
-            eprintln!("Received response for unknown handle: {}", handle);
+            async_node_warn!(handle = handle, "received response for unknown handle");
         }
 
         Ok(())
@@ -445,12 +490,16 @@ impl AsyncNode {
     async fn cleanup_requests(
         requests: &Arc<DashMap<i64, AsyncNetworkRequest>>,
         pending_requests: &Arc<AtomicUsize>,
-        reason: &str,
+        _reason: &str,
     ) {
         let pending_count = requests.len();
 
         if pending_count > 0 {
-            eprintln!("Cleaning up {} pending requests: {}", pending_count, reason);
+            async_node_warn!(
+                pending_count = pending_count,
+                reason = _reason,
+                "cleaning up pending requests"
+            );
         }
 
         // 清空映射表 (Drop 会通知所有等待者)
@@ -464,7 +513,10 @@ pub async fn async_block_for_result(
     rx: &mut mpsc::Receiver<VoltTable>,
 ) -> Result<VoltTable, VoltError> {
     match rx.recv().await {
-        Some(table) => Ok(table), // 直接返回 table，不调用 .has_error()
+        Some(mut table) => match table.has_error() {
+            None => Ok(table),
+            Some(err) => Err(err),
+        },
         None => Err(VoltError::ConnectionNotAvailable),
     }
 }

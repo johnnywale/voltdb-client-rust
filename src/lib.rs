@@ -167,6 +167,7 @@ pub mod error;
 mod generate;
 pub mod node;
 mod pool;
+pub mod pool_core;
 mod procedure_invocation;
 pub mod protocol;
 mod response;
@@ -186,6 +187,7 @@ pub use crate::error::{
 };
 pub use crate::node::{OptsBuilder, *};
 pub use crate::pool::*;
+pub use crate::pool_core::{ExhaustionPolicy, ValidationMode};
 pub use crate::table::*;
 
 #[cfg(feature = "tokio")]

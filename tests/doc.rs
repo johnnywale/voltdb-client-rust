@@ -5,7 +5,7 @@ use std::path::Path;
 
 #[test]
 fn doc() {
-    let rs = read_lines("src/main.rs").unwrap();
+    let rs = read_lines("examples/basic_usage.rs").unwrap();
     rs.for_each(|f| {
         println!("//!{}", f.unwrap());
     });
