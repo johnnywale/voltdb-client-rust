@@ -21,7 +21,7 @@ metrics = ["dep:metrics"]
 bytebuffer = "2.3.0"
 byteorder = "1.5"
 chrono = "0.4"
-bigdecimal = "0.4.0"
+bigdecimal = "0.4.10"
 sha2 = "0.10"
 quick-error = "2.0.1"
 futures = "0.3.31"
@@ -34,10 +34,10 @@ tracing = { version = "0.1", optional = true }
 metrics = { version = "0.24", optional = true }
 
 [dev-dependencies]
-libc = "0.2.178"
+libc = "0.2.180"
 testcontainers = { version = "0.26", features = ["blocking"] }
-lazy_static = "1.4.0"
-tokio = { version = "1.35", features = ["full"] }
+lazy_static = "1.5.0"
+tokio = { version = "1.49", features = ["full"] }
 
 [[example]]
 name = "basic_usage"
