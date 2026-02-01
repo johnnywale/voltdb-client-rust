@@ -57,7 +57,6 @@ impl Value for VoltTable {
             bytebuffer.write_u32(f.len() as u32);
             bytebuffer.write_bytes(f.as_bytes());
         });
-        println!("{}", bytebuffer.len())
     }
 
     fn marshal_in_table(&self, _bytebuffer: &mut ByteBuffer, _column_type: i8) {
@@ -72,7 +71,9 @@ impl Value for VoltTable {
     where
         Self: Sized,
     {
-        todo!()
+        Err(VoltError::Other(
+            "VoltTable::from_bytes is not supported. Use new_volt_table() to parse tables from response data.".to_string()
+        ))
     }
 }
 
@@ -86,14 +87,24 @@ impl VoltTable {
     /// TABLE BODY DATA:
     /// [int: num tuples]
     /// [int: row size (non inclusive), blob row data] * num tuples
+    /// Create a new VoltTable with the given column types and headers.
+    ///
+    /// # Panics
+    /// Panics if the length of `types` and `header` vectors don't match.
     pub fn new_table(types: Vec<i8>, header: Vec<String>) -> Self {
-        let mut columns = Vec::with_capacity(types.len());
-        for (i, tp) in types.iter().enumerate() {
-            columns.push(Column {
-                header_name: header.get(i).unwrap().clone(),
+        assert_eq!(
+            types.len(),
+            header.len(),
+            "Column types and headers must have the same length"
+        );
+        let columns: Vec<Column> = types
+            .iter()
+            .zip(header.iter())
+            .map(|(tp, name)| Column {
+                header_name: name.clone(),
                 header_type: *tp,
             })
-        }
+            .collect();
         VoltTable::new_voltdb_table(columns)
     }
 
@@ -127,12 +138,26 @@ impl VoltTable {
         }
     }
 
+    /// Add a row to the table.
+    ///
+    /// # Arguments
+    /// * `row` - A vector of values matching the table's column count and types.
+    ///
+    /// # Errors
+    /// Returns an error if the row has fewer values than the table has columns.
     pub fn add_row(&mut self, row: Vec<&dyn Value>) -> Result<i16, VoltError> {
+        if row.len() < self.columns.len() {
+            return Err(VoltError::Other(format!(
+                "Row has {} values but table has {} columns",
+                row.len(),
+                self.columns.len()
+            )));
+        }
         let mut bf: ByteBuffer = ByteBuffer::new();
-        self.columns.iter().enumerate().for_each(|(f, v)| {
-            let da = *row.get(f).unwrap();
-            da.marshal_in_table(&mut bf, v.header_type);
-        });
+        for (i, col) in self.columns.iter().enumerate() {
+            let value = row[i]; // Safe: we checked row.len() >= columns.len()
+            value.marshal_in_table(&mut bf, col.header_type);
+        }
         let len = bf.len();
         self.rows.push(bf);
         self.num_rows += 1;
@@ -200,9 +225,7 @@ impl VoltTable {
             crate::encode::ARRAY_COLUMN => Err(VoltError::InvalidColumnType(col_type)),
             crate::encode::NULL_COLUMN => Ok(0),
             crate::encode::TINYINT_COLUMN => Ok(1),
-            //SHORT_COLUMN
             crate::encode::SHORT_COLUMN => Ok(2),
-
             crate::encode::INT_COLUMN => Ok(4),
             crate::encode::LONG_COLUMN => Ok(8),
             crate::encode::FLOAT_COLUMN => Ok(8),
@@ -224,8 +247,14 @@ impl VoltTable {
                     // encoding for null string.
                     return Ok(4);
                 }
-                Ok(4 + str_len) //   4 + str_len;
+                Ok(4 + str_len)
             }
+            crate::encode::GEOGRAPHY_POINT_COLUMN => Err(VoltError::Other(
+                "GEOGRAPHY_POINT type is not supported. See: https://github.com/johnnywale/voltdb-client-rust".to_string()
+            )),
+            crate::encode::GEOGRAPHY_COLUMN => Err(VoltError::Other(
+                "GEOGRAPHY type is not supported. See: https://github.com/johnnywale/voltdb-client-rust".to_string()
+            )),
             _ => Err(VoltError::InvalidColumnType(col_type)),
         }
     }
@@ -454,7 +483,14 @@ impl VoltTable {
         }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let time = buffer.read_i64()?;
-        Ok(Option::Some(Utc.timestamp_millis_opt(time / 1000).unwrap()))
+        let millis = time / 1000;
+        match Utc.timestamp_millis_opt(millis) {
+            chrono::LocalResult::Single(dt) => Ok(Option::Some(dt)),
+            _ => Err(VoltError::Other(format!(
+                "Invalid timestamp value: {}",
+                millis
+            ))),
+        }
     }
 
     pub fn get_bytes_by_idx(&mut self, column_index: i16) -> Result<Vec<u8>, VoltError> {
@@ -533,7 +569,8 @@ pub fn new_volt_table(
             header_type: *(column_types.get(i as usize).unwrap()),
         });
         column_info_bytes.write_string(name.as_str());
-        cn_to_ci.insert(name, i);
+        // Store uppercase key for case-insensitive lookup
+        cn_to_ci.insert(name.to_uppercase(), i);
     }
     let row_count = bytebuffer.read_i32()?;
     let mut rows: Vec<ByteBuffer> = Vec::with_capacity(column_counts as usize);

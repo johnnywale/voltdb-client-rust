@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://docs.rs/voltdb-client-rust
+    about: Check the documentation for usage examples and API reference
+  - name: VoltDB Documentation
+    url: https://docs.voltdb.com/
+    about: Official VoltDB documentation

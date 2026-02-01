@@ -61,22 +61,22 @@ macro_rules! async_node_error {
     ($($arg:tt)*) => {};
 }
 
-/// 配置常量
-const MAX_MESSAGE_SIZE: usize = 50 * 1024 * 1024; // 50MB消息上限
-const WRITE_BUFFER_SIZE: usize = 1024; // 写入队列容量
-const BATCH_WRITE_THRESHOLD: usize = 8192; // 批量写入阈值
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30); // 默认超时
+/// Configuration constants
+const MAX_MESSAGE_SIZE: usize = 50 * 1024 * 1024; // 50MB message size limit
+const WRITE_BUFFER_SIZE: usize = 1024; // Write queue capacity
+const BATCH_WRITE_THRESHOLD: usize = 8192; // Batch write threshold
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30); // Default timeout
 #[allow(dead_code)]
-const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(60); // TCP保活间隔
+const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(60); // TCP keepalive interval
 
-/// 写入命令
+/// Write command for the writer task
 #[allow(dead_code)]
 enum WriteCommand {
     Data(Vec<u8>),
     Flush,
 }
 
-/// 异步网络请求跟踪
+/// Async network request tracking
 #[allow(dead_code)]
 struct AsyncNetworkRequest {
     handle: i64,
@@ -84,7 +84,7 @@ struct AsyncNetworkRequest {
     sync: bool,
     num_bytes: i32,
     channel: mpsc::Sender<VoltTable>,
-    created_at: Instant, // 用于超时检测
+    created_at: Instant, // Used for timeout detection
 }
 
 impl Debug for AsyncNetworkRequest {
@@ -97,19 +97,19 @@ impl Debug for AsyncNetworkRequest {
     }
 }
 
-/// 异步 VoltDB 连接节点
+/// Async VoltDB connection node
 pub struct AsyncNode {
-    /// 写入命令发送通道
+    /// Write command sender channel
     write_tx: mpsc::Sender<WriteCommand>,
-    /// 连接信息
+    /// Connection info from authentication
     info: ConnInfo,
-    /// 请求映射表 (使用 DashMap 减少锁竞争)
+    /// Request map (using DashMap to reduce lock contention)
     requests: Arc<DashMap<i64, AsyncNetworkRequest>>,
-    /// 停止信号
+    /// Stop signal for background tasks
     stop: Arc<watch::Sender<bool>>,
-    /// 请求序列号计数器
+    /// Request sequence number counter
     counter: Arc<AtomicI64>,
-    /// 待处理请求数 (用于负载均衡)
+    /// Pending request count (used for load balancing)
     pending_requests: Arc<AtomicUsize>,
 }
 
@@ -125,28 +125,35 @@ impl Debug for AsyncNode {
     }
 }
 
+impl Drop for AsyncNode {
+    fn drop(&mut self) {
+        // Signal background tasks to stop
+        let _ = self.stop.send(true);
+    }
+}
+
 impl AsyncNode {
-    /// 创建新的异步连接
+    /// Create a new async connection to VoltDB server
     pub async fn new(opt: NodeOpt) -> Result<AsyncNode, VoltError> {
         let addr = format!("{}:{}", opt.ip_port.ip_host, opt.ip_port.port);
 
-        // 构建认证消息
+        // Build authentication message
         let auth_msg = build_auth_message(opt.user.as_deref(), opt.pass.as_deref())?;
 
-        // 异步连接
+        // Async connect
         let mut stream = TcpStream::connect(&addr).await?;
 
-        // TCP 优化配置
-        stream.set_nodelay(true)?; // 禁用 Nagle 算法,降低延迟
+        // TCP optimization configuration
+        stream.set_nodelay(true)?; // Disable Nagle algorithm to reduce latency
         // if let Err(e) = stream.set_keepalive(Some(KEEPALIVE_INTERVAL)) {
         //     eprintln!("Warning: Failed to set keepalive: {}", e);
         // }
 
-        // 异步认证握手
+        // Async authentication handshake
         stream.write_all(&auth_msg).await?;
         stream.flush().await?;
 
-        // 读取认证响应
+        // Read authentication response
         let mut len_buf = [0u8; 4];
         stream.read_exact(&mut len_buf).await?;
         let read = BigEndian::read_u32(&len_buf) as usize;
@@ -154,13 +161,13 @@ impl AsyncNode {
         let mut all = vec![0; read];
         stream.read_exact(&mut all).await?;
 
-        // 解析认证响应
+        // Parse authentication response
         let info = parse_auth_response(&all)?;
 
-        // 拆分读写流
+        // Split into read and write halves
         let (read_half, write_half) = tokio::io::split(stream);
 
-        // 创建通道
+        // Create channels
         let requests = Arc::new(DashMap::new());
         let (stop_tx, stop_rx) = watch::channel(false);
         let (write_tx, write_rx) = mpsc::channel(WRITE_BUFFER_SIZE);
@@ -174,7 +181,7 @@ impl AsyncNode {
             pending_requests: Arc::new(AtomicUsize::new(0)),
         };
 
-        // 启动后台任务
+        // Start background tasks
         node.spawn_writer(write_half, write_rx, stop_rx.clone());
         node.spawn_reader(read_half, stop_rx.clone());
         node.spawn_timeout_checker(stop_rx);
@@ -182,30 +189,30 @@ impl AsyncNode {
         Ok(node)
     }
 
-    /// 获取下一个序列号
+    /// Get the next sequence number for request tracking
     #[inline]
     pub fn get_sequence(&self) -> i64 {
         self.counter.fetch_add(1, Ordering::Relaxed)
     }
 
-    /// 获取当前待处理请求数 (用于负载均衡)
+    /// Get the current pending request count (used for load balancing)
     #[inline]
     pub fn pending_count(&self) -> usize {
         self.pending_requests.load(Ordering::Relaxed)
     }
 
-    /// 获取连接信息
+    /// Get connection info from authentication
     pub fn conn_info(&self) -> &ConnInfo {
         &self.info
     }
 
-    /// 列出所有存储过程
+    /// List all stored procedures available in the database
     pub async fn list_procedures(&self) -> Result<mpsc::Receiver<VoltTable>, VoltError> {
         self.call_sp("@SystemCatalog", volt_param!("PROCEDURES"))
             .await
     }
 
-    /// 调用存储过程
+    /// Call a stored procedure with parameters
     pub async fn call_sp(
         &self,
         query: &str,
@@ -215,7 +222,7 @@ impl AsyncNode {
             .await
     }
 
-    /// 带超时的存储过程调用
+    /// Call a stored procedure with custom timeout
     pub async fn call_sp_with_timeout(
         &self,
         query: &str,
@@ -225,7 +232,7 @@ impl AsyncNode {
         let req = self.get_sequence();
         let mut proc = new_procedure_invocation(req, false, &param, query);
 
-        // 创建响应通道
+        // Create response channel
         let (tx, rx) = mpsc::channel(1);
 
         let seq = AsyncNetworkRequest {
@@ -237,11 +244,11 @@ impl AsyncNode {
             created_at: Instant::now(),
         };
 
-        // 插入请求映射
+        // Insert into request map
         self.requests.insert(req, seq);
         self.pending_requests.fetch_add(1, Ordering::Relaxed);
 
-        // 发送请求数据
+        // Send request data
         let bs = proc.bytes();
         self.write_tx
             .send(WriteCommand::Data(bs))
@@ -251,19 +258,19 @@ impl AsyncNode {
         Ok(rx)
     }
 
-    /// 上传 JAR 文件
+    /// Upload a JAR file containing stored procedure classes
     pub async fn upload_jar(&self, bs: Vec<u8>) -> Result<mpsc::Receiver<VoltTable>, VoltError> {
         self.call_sp("@UpdateClasses", volt_param!(bs, "")).await
     }
 
-    /// 执行 Ad-Hoc SQL 查询
+    /// Execute an ad-hoc SQL query
     pub async fn query(&self, sql: &str) -> Result<mpsc::Receiver<VoltTable>, VoltError> {
         let mut zero_vec: Vec<&dyn Value> = Vec::new();
         zero_vec.push(&sql);
         self.call_sp("@AdHoc", zero_vec).await
     }
 
-    /// 发送 Ping 保持连接
+    /// Send a ping to keep the connection alive
     pub async fn ping(&self) -> Result<(), VoltError> {
         let zero_vec: Vec<&dyn Value> = Vec::new();
         let mut proc = new_procedure_invocation(PING_HANDLE, false, &zero_vec, "@Ping");
@@ -277,13 +284,13 @@ impl AsyncNode {
         Ok(())
     }
 
-    /// 关闭连接
+    /// Shutdown the connection gracefully
     pub async fn shutdown(&self) -> Result<(), VoltError> {
         let _ = self.stop.send(true);
         Ok(())
     }
 
-    /// 启动写入任务 (支持批量写入优化)
+    /// Spawn the writer task (supports batch write optimization)
     fn spawn_writer(
         &self,
         mut write_half: WriteHalf<TcpStream>,
@@ -305,7 +312,7 @@ impl AsyncNode {
                             Some(WriteCommand::Data(bytes)) => {
                                 batch_buffer.extend_from_slice(&bytes);
 
-                                // 尝试批量收集更多数据
+                                // Try to batch collect more data
                                 while batch_buffer.len() < BATCH_WRITE_THRESHOLD {
                                     match write_rx.try_recv() {
                                         Ok(WriteCommand::Data(more_bytes)) => {
@@ -316,7 +323,7 @@ impl AsyncNode {
                                     }
                                 }
 
-                                // 批量写入
+                                // Batch write
                                 if let Err(_e) = write_half.write_all(&batch_buffer).await {
                                     async_node_error!(error = %_e, "write error");
                                     break;
@@ -343,7 +350,7 @@ impl AsyncNode {
         });
     }
 
-    /// 启动读取任务
+    /// Spawn the reader task for receiving responses
     fn spawn_reader(&self, mut read_half: ReadHalf<TcpStream>, mut stop_rx: watch::Receiver<bool>) {
         let requests = Arc::clone(&self.requests);
         let pending_requests = Arc::clone(&self.pending_requests);
@@ -367,12 +374,12 @@ impl AsyncNode {
                 }
             };
 
-            // 清理所有待处理请求
+            // Cleanup all pending requests
             Self::cleanup_requests(&requests, &pending_requests, reason).await;
         });
     }
 
-    /// 启动超时检查任务
+    /// Spawn the timeout checker task for cleaning up stale requests
     fn spawn_timeout_checker(&self, mut stop_rx: watch::Receiver<bool>) {
         let requests = Arc::clone(&self.requests);
         let pending_requests = Arc::clone(&self.pending_requests);
@@ -391,7 +398,7 @@ impl AsyncNode {
                         let now = Instant::now();
                         let mut expired = Vec::new();
 
-                        // 查找超时请求
+                        // Find expired requests
                         for entry in requests.iter() {
                             let age = now.duration_since(entry.created_at);
                             if age > DEFAULT_TIMEOUT * 2 {
@@ -399,7 +406,7 @@ impl AsyncNode {
                             }
                         }
 
-                        // 清理超时请求
+                        // Cleanup expired requests
                         for handle in expired {
                             if let Some((_, _req)) = requests.remove(&handle) {
                                 pending_requests.fetch_sub(1, Ordering::Relaxed);
@@ -408,7 +415,7 @@ impl AsyncNode {
                                     elapsed = ?now.duration_since(_req.created_at),
                                     "request timed out"
                                 );
-                                // channel drop 会通知调用者
+                                // Channel drop will notify the caller
                             }
                         }
                     }
@@ -417,18 +424,18 @@ impl AsyncNode {
         });
     }
 
-    /// 读取并处理单个响应
+    /// Read and process a single response from the server
     async fn async_job(
         tcp: &mut ReadHalf<TcpStream>,
         requests: &Arc<DashMap<i64, AsyncNetworkRequest>>,
         pending_requests: &Arc<AtomicUsize>,
     ) -> Result<(), VoltError> {
-        // 读取消息长度
+        // Read message length
         let mut len_buf = [0u8; 4];
         tcp.read_exact(&mut len_buf).await?;
         let msg_len = BigEndian::read_u32(&len_buf) as usize;
 
-        // 安全检查
+        // Safety check for message size
         if msg_len > MAX_MESSAGE_SIZE {
             return Err(VoltError::MessageTooLarge(msg_len));
         }
@@ -437,28 +444,28 @@ impl AsyncNode {
             return Ok(());
         }
 
-        // 使用 BytesMut 减少内存拷贝
+        // Use BytesMut to reduce memory copying
         let mut buf = BytesMut::with_capacity(msg_len);
         buf.resize(msg_len, 0);
         tcp.read_exact(&mut buf).await?;
 
-        // 解析响应头
+        // Parse response header
         let _ = buf.get_u8();
         let handle = buf.get_i64();
 
-        // Ping 响应直接返回
+        // Ping response - just return
         if handle == PING_HANDLE {
             return Ok(());
         }
 
-        // 路由响应到等待的调用者
+        // Route response to waiting caller
         if let Some((_, req)) = requests.remove(&handle) {
             pending_requests.fetch_sub(1, Ordering::Relaxed);
 
-            // 冻结 buffer 以便安全地跨任务移动
+            // Freeze buffer so it can be safely moved across tasks
             let frozen_buf = buf.freeze();
 
-            // 在独立任务中解析,避免阻塞读取循环
+            // Parse in a separate task to avoid blocking the read loop
             tokio::spawn(async move {
                 match Self::parse_response(frozen_buf, handle) {
                     Ok(table) => {
@@ -466,7 +473,7 @@ impl AsyncNode {
                     }
                     Err(_e) => {
                         async_node_error!(handle = handle, error = %_e, "parse error");
-                        // channel drop 会通知调用者
+                        // Channel drop will notify the caller
                     }
                 }
             });
@@ -477,16 +484,16 @@ impl AsyncNode {
         Ok(())
     }
 
-    /// 解析响应数据 (在独立任务中执行)
+    /// Parse response data (executed in a separate task)
     fn parse_response(buf: bytes::Bytes, handle: i64) -> Result<VoltTable, VoltError> {
-        // 将 Bytes 转换为 ByteBuffer 进行解析
+        // Convert Bytes to ByteBuffer for parsing
         let mut byte_buf = bytebuffer::ByteBuffer::from_bytes(&buf[..]);
         let info = VoltResponseInfo::new(&mut byte_buf, handle)?;
         let table = new_volt_table(&mut byte_buf, info)?;
         Ok(table)
     }
 
-    /// 清理所有待处理请求
+    /// Cleanup all pending requests on shutdown or error
     async fn cleanup_requests(
         requests: &Arc<DashMap<i64, AsyncNetworkRequest>>,
         pending_requests: &Arc<AtomicUsize>,
@@ -502,13 +509,13 @@ impl AsyncNode {
             );
         }
 
-        // 清空映射表 (Drop 会通知所有等待者)
+        // Clear the map (Drop will notify all waiters)
         requests.clear();
         pending_requests.store(0, Ordering::Relaxed);
     }
 }
 
-/// 异步等待响应结果
+/// Async wait for response result
 pub async fn async_block_for_result(
     rx: &mut mpsc::Receiver<VoltTable>,
 ) -> Result<VoltTable, VoltError> {
@@ -521,7 +528,7 @@ pub async fn async_block_for_result(
     }
 }
 
-/// 带超时的异步等待
+/// Async wait for response result with timeout
 pub async fn async_block_for_result_with_timeout(
     rx: &mut mpsc::Receiver<VoltTable>,
     timeout_duration: Duration,
@@ -536,7 +543,7 @@ pub async fn async_block_for_result_with_timeout(
     }
 }
 
-/// VoltError 扩展 (需要在 encode.rs 中添加)
+/// VoltError extension methods for async operations
 impl VoltError {
     pub fn message_too_large(size: usize) -> Self {
         VoltError::MessageTooLarge(size)

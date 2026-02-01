@@ -135,7 +135,10 @@ pub struct PoolConfig {
     pub validation_mode: ValidationMode,
     /// Number of consecutive failures before opening circuit
     pub circuit_failure_threshold: u32,
-    /// Timeout for graceful shutdown drain
+    /// Timeout for graceful shutdown drain.
+    ///
+    /// **Note:** This field is currently reserved for future use.
+    /// The current shutdown implementation closes connections immediately.
     pub shutdown_timeout: Duration,
 }
 

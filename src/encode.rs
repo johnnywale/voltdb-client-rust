@@ -26,6 +26,12 @@ pub const TABLE: i8 = 21;
 pub const DECIMAL_COLUMN: i8 = 22;
 pub const VAR_BIN_COLUMN: i8 = 25; // varbinary (int)(bytes)
 
+// Geospatial types (not supported - VoltDB types 26 and 27)
+#[allow(dead_code)]
+pub const GEOGRAPHY_POINT_COLUMN: i8 = 26;
+#[allow(dead_code)]
+pub const GEOGRAPHY_COLUMN: i8 = 27;
+
 pub const NULL_DECIMAL: [u8; 16] = [128, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
 pub const NULL_BIT_VALUE: [u8; 1] = [128];
@@ -542,7 +548,9 @@ impl Value for &str {
     }
 
     fn from_bytes(_bs: Vec<u8>, _column: &Column) -> Result<Self, VoltError> {
-        todo!()
+        Err(VoltError::Other(
+            "&str::from_bytes is not supported. Use String::from_bytes instead.".to_string(),
+        ))
     }
 }
 
@@ -602,7 +610,14 @@ impl Value for DateTime<Utc> {
         }
         let mut buffer = ByteBuffer::from_bytes(&bs);
         let time = buffer.read_i64()?;
-        Ok(Utc.timestamp_millis_opt(time / 1000).unwrap())
+        let millis = time / 1000;
+        match Utc.timestamp_millis_opt(millis) {
+            chrono::LocalResult::Single(dt) => Ok(dt),
+            _ => Err(VoltError::Other(format!(
+                "Invalid timestamp value: {}",
+                millis
+            ))),
+        }
     }
 }
 

@@ -1,0 +1,113 @@
+name: Bug Report
+description: Report a bug or unexpected behavior
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Please fill out the form below.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is.
+      placeholder: Describe the bug...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior.
+      placeholder: |
+        1. Create a connection with...
+        2. Execute query...
+        3. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What you expected to happen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened.
+    validations:
+      required: true
+
+  - type: textarea
+    id: code
+    attributes:
+      label: Code Example
+      description: Minimal code example that reproduces the issue.
+      render: rust
+      placeholder: |
+        use voltdb_client_rust::*;
+
+        fn main() {
+            // Your code here
+        }
+
+  - type: input
+    id: version
+    attributes:
+      label: Crate Version
+      description: What version of voltdb-client-rust are you using?
+      placeholder: "0.2.0"
+    validations:
+      required: true
+
+  - type: input
+    id: voltdb-version
+    attributes:
+      label: VoltDB Version
+      description: What version of VoltDB server are you connecting to?
+      placeholder: "9.2.1"
+
+  - type: input
+    id: rust-version
+    attributes:
+      label: Rust Version
+      description: Output of `rustc --version`
+      placeholder: "rustc 1.85.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: async
+    attributes:
+      label: API Type
+      description: Are you using sync or async API?
+      options:
+        - Sync (Pool/Node)
+        - Async (AsyncPool/AsyncNode)
+        - Both
+    validations:
+      required: true
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Any other context about the problem (logs, stack traces, etc.)
