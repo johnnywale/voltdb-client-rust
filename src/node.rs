@@ -440,8 +440,13 @@ impl Node {
         // Parse auth response using shared protocol code
         let info = parse_auth_response(&all)?;
 
-        // Clone the stream for the read side (listener thread)
+        // Clone the stream for the read side (listener thread).
+        // Set a read timeout on the read clone so the listener thread can
+        // periodically check the stop flag (required on Linux where
+        // shutdown() on the write clone may not unblock the read clone).
         let read_stream = stream.try_clone()?;
+        let listener_timeout = opt.read_timeout.unwrap_or(Duration::from_secs(2));
+        read_stream.set_read_timeout(Some(listener_timeout))?;
 
         let requests = Arc::new(Mutex::new(HashMap::new()));
         let stop = Arc::new(Mutex::new(false));
@@ -651,8 +656,10 @@ impl Node {
     ///
     /// Note: This is automatically called when the `Node` is dropped.
     pub fn shutdown(&mut self) -> Result<(), VoltError> {
-        let mut stop = self.stop.lock()?;
-        *stop = true;
+        {
+            let mut stop = self.stop.lock()?;
+            *stop = true;
+        } // release stop lock before any join — listener thread needs it
 
         let mut stream_guard = self.write_stream.lock()?;
         if let Some(stream) = stream_guard.take() {
@@ -690,13 +697,23 @@ impl Node {
                 drop(should_stop); // Release lock before blocking on I/O
 
                 if let Err(_err) = Node::job(&mut tcp, &requests, &mut buffer) {
-                    // Only log error if we're not intentionally stopping
+                    // Timeout errors are expected — the read timeout lets us
+                    // periodically check the stop flag. Just loop back.
+                    if let VoltError::Io(ref io_err) = _err {
+                        if io_err.kind() == std::io::ErrorKind::WouldBlock
+                            || io_err.kind() == std::io::ErrorKind::TimedOut
+                        {
+                            continue;
+                        }
+                    }
+                    // Only log non-timeout errors if we're not intentionally stopping
                     let is_stopping = stopping
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner());
                     if !*is_stopping {
                         node_error!(error = %_err, "VoltDB listener error");
                     }
+                    break; // Exit on non-timeout errors
                 }
             }
         })
