@@ -19,9 +19,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::pool_core::{
-    Circuit, ConnState, ExhaustionPolicy, PoolError, PoolPhase, ValidationMode,
-};
+use crate::pool_core::{Circuit, ConnState, ExhaustionPolicy, PoolPhase, ValidationMode};
 use crate::{Node, NodeOpt, Opts, Value, VoltError, VoltTable, block_for_result, node};
 
 // ============================================================================
@@ -453,7 +451,7 @@ impl Pool {
     pub fn get_conn(&self) -> Result<PooledConn<'_>, VoltError> {
         if self.shutdown_flag.load(Ordering::Relaxed) {
             pool_warn!("get_conn called on shutdown pool");
-            return Err(PoolError::PoolShutdown.into());
+            return Err(VoltError::PoolShutdown);
         }
 
         pool_metrics::inc_requests_total();
@@ -468,10 +466,12 @@ impl Pool {
 
     fn get_conn_failfast(&self, preferred_idx: usize) -> Result<PooledConn<'_>, VoltError> {
         let (lock, _cvar) = &*self.inner;
-        let inner = lock.lock().map_err(|_| PoolError::LockPoisoned)?;
+        let inner = lock
+            .lock()
+            .map_err(|_| VoltError::PoisonError("Pool lock poisoned".into()))?;
 
         if inner.phase != PoolPhase::Running {
-            return Err(PoolError::PoolShutdown.into());
+            return Err(VoltError::PoolShutdown);
         }
 
         // Try preferred index first
@@ -494,7 +494,7 @@ impl Pool {
 
         pool_warn!("no healthy connections available");
         pool_metrics::inc_requests_failed_total();
-        Err(PoolError::PoolExhausted.into())
+        Err(VoltError::PoolExhausted)
     }
 
     fn get_conn_blocking(
@@ -505,11 +505,13 @@ impl Pool {
         let deadline = Instant::now() + timeout;
         let (lock, cvar) = &*self.inner;
 
-        let mut inner = lock.lock().map_err(|_| PoolError::LockPoisoned)?;
+        let mut inner = lock
+            .lock()
+            .map_err(|_| VoltError::PoisonError("Pool lock poisoned".into()))?;
 
         loop {
             if inner.phase != PoolPhase::Running {
-                return Err(PoolError::PoolShutdown.into());
+                return Err(VoltError::PoolShutdown);
             }
 
             // Try preferred index first
@@ -530,13 +532,13 @@ impl Pool {
             if remaining.is_zero() {
                 pool_warn!(timeout = ?timeout, "connection wait timed out");
                 pool_metrics::inc_requests_failed_total();
-                return Err(PoolError::Timeout.into());
+                return Err(VoltError::Timeout);
             }
 
             pool_trace!("waiting for available connection");
             let (guard, _timeout_result) = cvar
                 .wait_timeout(inner, remaining)
-                .map_err(|_| PoolError::LockPoisoned)?;
+                .map_err(|_| VoltError::PoisonError("Pool lock poisoned".into()))?;
             inner = guard;
         }
     }
@@ -683,9 +685,12 @@ impl Pool {
                 };
             }
 
-            // Clear all nodes
+            // Shutdown and clear all nodes
             for node_arc in &inner.nodes {
                 if let Ok(mut node_guard) = node_arc.lock() {
+                    if let Some(ref mut node) = *node_guard {
+                        let _ = node.shutdown();
+                    }
                     *node_guard = None;
                 }
             }

@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, Notify};
 use tokio::time::timeout;
 
-use crate::async_node::{AsyncNode, async_block_for_result};
+use crate::async_node::{AsyncNode, async_block_for_result_with_timeout};
 use crate::{NodeOpt, Opts, Value, VoltError, VoltTable};
 
 // ============================================================================
@@ -116,53 +116,6 @@ mod async_pool_metrics {
     pub fn inc_circuit_open_total() {}
     pub fn inc_requests_failed_total() {}
     pub fn inc_requests_total() {}
-}
-
-// ============================================================================
-// Pool-specific errors
-// ============================================================================
-
-/// Pool-specific error conditions.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AsyncPoolError {
-    /// Pool is shutting down, no new connections allowed
-    PoolShutdown,
-    /// Circuit breaker is open for the requested connection
-    CircuitOpen,
-    /// All connections are busy or unhealthy
-    PoolExhausted,
-    /// Timed out waiting for a connection
-    Timeout,
-    /// Internal lock was poisoned
-    LockPoisoned,
-}
-
-impl fmt::Display for AsyncPoolError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            AsyncPoolError::PoolShutdown => write!(f, "Pool is shutting down"),
-            AsyncPoolError::CircuitOpen => write!(f, "Circuit breaker is open"),
-            AsyncPoolError::PoolExhausted => write!(f, "Pool exhausted, no healthy connections"),
-            AsyncPoolError::Timeout => write!(f, "Timed out waiting for connection"),
-            AsyncPoolError::LockPoisoned => write!(f, "Internal lock poisoned"),
-        }
-    }
-}
-
-impl std::error::Error for AsyncPoolError {}
-
-impl From<AsyncPoolError> for VoltError {
-    fn from(e: AsyncPoolError) -> Self {
-        match e {
-            AsyncPoolError::PoolShutdown => VoltError::ConnectionNotAvailable,
-            AsyncPoolError::CircuitOpen => VoltError::ConnectionNotAvailable,
-            AsyncPoolError::PoolExhausted => VoltError::ConnectionNotAvailable,
-            AsyncPoolError::Timeout => VoltError::Timeout,
-            AsyncPoolError::LockPoisoned => {
-                VoltError::PoisonError("Pool lock poisoned".to_string())
-            }
-        }
-    }
 }
 
 // ============================================================================
@@ -282,6 +235,9 @@ pub struct AsyncPoolConfig {
     /// **Note:** This field is currently reserved for future use.
     /// The current shutdown implementation closes connections immediately.
     pub shutdown_timeout: Duration,
+    /// Timeout for individual requests (query, call_sp, etc.).
+    /// If a response is not received within this duration, the request fails with `VoltError::Timeout`.
+    pub request_timeout: Duration,
 }
 
 impl Default for AsyncPoolConfig {
@@ -294,6 +250,7 @@ impl Default for AsyncPoolConfig {
             validation_mode: ValidationMode::FailFast,
             circuit_failure_threshold: 3,
             shutdown_timeout: Duration::from_secs(30),
+            request_timeout: Duration::from_secs(30),
         }
     }
 }
@@ -335,6 +292,11 @@ impl AsyncPoolConfig {
 
     pub fn shutdown_timeout(mut self, timeout: Duration) -> Self {
         self.shutdown_timeout = timeout;
+        self
+    }
+
+    pub fn request_timeout(mut self, duration: Duration) -> Self {
+        self.request_timeout = duration;
         self
     }
 }
@@ -587,7 +549,7 @@ impl AsyncPool {
     pub async fn get_conn(&self) -> Result<AsyncPooledConn<'_>, VoltError> {
         if self.shutdown_flag.load(Ordering::Relaxed) {
             async_pool_warn!("get_conn called on shutdown pool");
-            return Err(AsyncPoolError::PoolShutdown.into());
+            return Err(VoltError::PoolShutdown);
         }
 
         async_pool_metrics::inc_requests_total();
@@ -609,7 +571,7 @@ impl AsyncPool {
         let inner = self.inner.lock().await;
 
         if inner.phase != PoolPhase::Running {
-            return Err(AsyncPoolError::PoolShutdown.into());
+            return Err(VoltError::PoolShutdown);
         }
 
         // Try preferred index first
@@ -632,7 +594,7 @@ impl AsyncPool {
 
         async_pool_warn!("no healthy connections available");
         async_pool_metrics::inc_requests_failed_total();
-        Err(AsyncPoolError::PoolExhausted.into())
+        Err(VoltError::PoolExhausted)
     }
 
     async fn get_conn_blocking(
@@ -646,7 +608,7 @@ impl AsyncPool {
             let inner = self.inner.lock().await;
 
             if inner.phase != PoolPhase::Running {
-                return Err(AsyncPoolError::PoolShutdown.into());
+                return Err(VoltError::PoolShutdown);
             }
 
             // Try preferred index first
@@ -667,7 +629,7 @@ impl AsyncPool {
             if remaining.is_zero() {
                 async_pool_warn!(timeout = ?wait_timeout, "connection wait timed out");
                 async_pool_metrics::inc_requests_failed_total();
-                return Err(AsyncPoolError::Timeout.into());
+                return Err(VoltError::Timeout);
             }
 
             async_pool_trace!("waiting for available connection");
@@ -786,26 +748,40 @@ impl AsyncPool {
     }
 
     /// Initiate graceful shutdown.
+    /// Signals all background tasks to stop and waits for them to finish.
     pub async fn shutdown(&self) {
         async_pool_info!("initiating pool shutdown");
         self.shutdown_flag.store(true, Ordering::Relaxed);
 
-        let mut inner = self.inner.lock().await;
-        inner.phase = PoolPhase::Shutdown;
-        async_pool_info!("entering shutdown phase");
+        // Collect node arcs while holding pool lock, then release before awaiting shutdowns
+        let nodes: Vec<Arc<Mutex<Option<AsyncNode>>>>;
+        {
+            let mut inner = self.inner.lock().await;
+            inner.phase = PoolPhase::Shutdown;
+            async_pool_info!("entering shutdown phase");
 
-        for slot in &mut inner.slots {
-            slot.state = ConnState::Unhealthy {
-                since: Instant::now(),
-            };
-        }
+            for slot in &mut inner.slots {
+                slot.state = ConnState::Unhealthy {
+                    since: Instant::now(),
+                };
+            }
 
-        for node_arc in &inner.nodes {
+            nodes = inner.nodes.iter().map(Arc::clone).collect();
+        } // pool lock released to prevent deadlocks during node shutdown
+
+        // Shutdown each node (awaits background tasks)
+        for node_arc in &nodes {
             let mut node_guard = node_arc.lock().await;
+            if let Some(ref node) = *node_guard {
+                let _ = node.shutdown().await;
+            }
             *node_guard = None;
         }
 
-        inner.update_metrics();
+        {
+            let inner = self.inner.lock().await;
+            inner.update_metrics();
+        }
         self.notify.notify_waiters();
 
         async_pool_info!("pool shutdown complete");
@@ -872,10 +848,10 @@ impl AsyncPooledConn<'_> {
             .ok_or(VoltError::ConnectionNotAvailable)?;
         let mut rx = node.query(sql).await?;
         drop(node_guard);
-        let result = async_block_for_result(&mut rx).await;
+        let result =
+            async_block_for_result_with_timeout(&mut rx, self.config.request_timeout).await;
         self.handle_result(&result).await;
         result
-        // result
     }
 
     pub async fn list_procedures(&mut self) -> Result<VoltTable, VoltError> {
@@ -887,7 +863,8 @@ impl AsyncPooledConn<'_> {
             .ok_or(VoltError::ConnectionNotAvailable)?;
         let mut rx = node.list_procedures().await?;
         drop(node_guard);
-        let result = async_block_for_result(&mut rx).await;
+        let result =
+            async_block_for_result_with_timeout(&mut rx, self.config.request_timeout).await;
         self.handle_result(&result).await;
         result
     }
@@ -909,7 +886,8 @@ impl AsyncPooledConn<'_> {
         let mut rx = node.call_sp(proc, params).await?;
         drop(node_guard);
 
-        let result = async_block_for_result(&mut rx).await;
+        let result =
+            async_block_for_result_with_timeout(&mut rx, self.config.request_timeout).await;
         self.handle_result(&result).await;
         result
     }
@@ -926,7 +904,8 @@ impl AsyncPooledConn<'_> {
         let mut rx = node.upload_jar(bs).await?;
         drop(node_guard);
 
-        let result = async_block_for_result(&mut rx).await;
+        let result =
+            async_block_for_result_with_timeout(&mut rx, self.config.request_timeout).await;
         self.handle_result(&result).await;
         result
     }
@@ -1030,7 +1009,8 @@ mod tests {
             })
             .validation_mode(ValidationMode::BestEffort)
             .circuit_failure_threshold(5)
-            .shutdown_timeout(Duration::from_secs(60));
+            .shutdown_timeout(Duration::from_secs(60))
+            .request_timeout(Duration::from_secs(15));
 
         assert_eq!(config.size, 20);
         assert_eq!(config.reconnect_backoff, Duration::from_secs(10));
@@ -1044,6 +1024,7 @@ mod tests {
         assert_eq!(config.validation_mode, ValidationMode::BestEffort);
         assert_eq!(config.circuit_failure_threshold, 5);
         assert_eq!(config.shutdown_timeout, Duration::from_secs(60));
+        assert_eq!(config.request_timeout, Duration::from_secs(15));
     }
 
     #[test]
@@ -1052,6 +1033,7 @@ mod tests {
         assert_eq!(config.size, 10);
         assert_eq!(config.exhaustion_policy, ExhaustionPolicy::FailFast);
         assert_eq!(config.validation_mode, ValidationMode::FailFast);
+        assert_eq!(config.request_timeout, Duration::from_secs(30));
     }
 
     #[test]
@@ -1106,26 +1088,6 @@ mod tests {
 
         assert_eq!(slot.consecutive_failures, 3);
         assert!(matches!(slot.circuit, Circuit::Open { .. }));
-    }
-
-    #[test]
-    fn test_async_pool_error_display() {
-        assert_eq!(
-            format!("{}", AsyncPoolError::PoolShutdown),
-            "Pool is shutting down"
-        );
-        assert_eq!(
-            format!("{}", AsyncPoolError::CircuitOpen),
-            "Circuit breaker is open"
-        );
-        assert_eq!(
-            format!("{}", AsyncPoolError::PoolExhausted),
-            "Pool exhausted, no healthy connections"
-        );
-        assert_eq!(
-            format!("{}", AsyncPoolError::Timeout),
-            "Timed out waiting for connection"
-        );
     }
 
     #[test]

@@ -111,6 +111,8 @@ pub struct AsyncNode {
     counter: Arc<AtomicI64>,
     /// Pending request count (used for load balancing)
     pending_requests: Arc<AtomicUsize>,
+    /// Handles for background tasks (writer, reader, timeout checker)
+    task_handles: std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 impl Debug for AsyncNode {
@@ -179,6 +181,7 @@ impl AsyncNode {
             requests: requests.clone(),
             counter: Arc::new(AtomicI64::new(1)),
             pending_requests: Arc::new(AtomicUsize::new(0)),
+            task_handles: std::sync::Mutex::new(Vec::with_capacity(3)),
         };
 
         // Start background tasks
@@ -212,22 +215,13 @@ impl AsyncNode {
             .await
     }
 
-    /// Call a stored procedure with parameters
+    /// Call a stored procedure with parameters.
+    /// Returns a receiver for the response. Use `async_block_for_result` or
+    /// `async_block_for_result_with_timeout` to await the result.
     pub async fn call_sp(
         &self,
         query: &str,
         param: Vec<&dyn Value>,
-    ) -> Result<mpsc::Receiver<VoltTable>, VoltError> {
-        self.call_sp_with_timeout(query, param, DEFAULT_TIMEOUT)
-            .await
-    }
-
-    /// Call a stored procedure with custom timeout
-    pub async fn call_sp_with_timeout(
-        &self,
-        query: &str,
-        param: Vec<&dyn Value>,
-        _timeout_duration: Duration,
     ) -> Result<mpsc::Receiver<VoltTable>, VoltError> {
         let req = self.get_sequence();
         let mut proc = new_procedure_invocation(req, false, &param, query);
@@ -258,6 +252,18 @@ impl AsyncNode {
         Ok(rx)
     }
 
+    /// Call a stored procedure with custom timeout.
+    /// Convenience method that sends the request and awaits the response with a timeout.
+    pub async fn call_sp_with_timeout(
+        &self,
+        query: &str,
+        param: Vec<&dyn Value>,
+        timeout_duration: Duration,
+    ) -> Result<VoltTable, VoltError> {
+        let mut rx = self.call_sp(query, param).await?;
+        async_block_for_result_with_timeout(&mut rx, timeout_duration).await
+    }
+
     /// Upload a JAR file containing stored procedure classes
     pub async fn upload_jar(&self, bs: Vec<u8>) -> Result<mpsc::Receiver<VoltTable>, VoltError> {
         self.call_sp("@UpdateClasses", volt_param!(bs, "")).await
@@ -284,9 +290,14 @@ impl AsyncNode {
         Ok(())
     }
 
-    /// Shutdown the connection gracefully
+    /// Shutdown the connection gracefully.
+    /// Signals background tasks to stop and waits for them to finish.
     pub async fn shutdown(&self) -> Result<(), VoltError> {
         let _ = self.stop.send(true);
+        let handles: Vec<_> = self.task_handles.lock().unwrap().drain(..).collect();
+        for handle in handles {
+            let _ = tokio::time::timeout(Duration::from_secs(5), handle).await;
+        }
         Ok(())
     }
 
@@ -297,7 +308,7 @@ impl AsyncNode {
         mut write_rx: mpsc::Receiver<WriteCommand>,
         mut stop_rx: watch::Receiver<bool>,
     ) {
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let mut batch_buffer = Vec::with_capacity(BATCH_WRITE_THRESHOLD * 2);
 
             loop {
@@ -348,6 +359,7 @@ impl AsyncNode {
 
             async_node_debug!("writer task terminated");
         });
+        self.task_handles.lock().unwrap().push(handle);
     }
 
     /// Spawn the reader task for receiving responses
@@ -355,7 +367,7 @@ impl AsyncNode {
         let requests = Arc::clone(&self.requests);
         let pending_requests = Arc::clone(&self.pending_requests);
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let reason = loop {
                 tokio::select! {
                     _ = stop_rx.changed() => {
@@ -377,6 +389,7 @@ impl AsyncNode {
             // Cleanup all pending requests
             Self::cleanup_requests(&requests, &pending_requests, reason).await;
         });
+        self.task_handles.lock().unwrap().push(handle);
     }
 
     /// Spawn the timeout checker task for cleaning up stale requests
@@ -384,7 +397,7 @@ impl AsyncNode {
         let requests = Arc::clone(&self.requests);
         let pending_requests = Arc::clone(&self.pending_requests);
 
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(5));
 
             loop {
@@ -401,7 +414,7 @@ impl AsyncNode {
                         // Find expired requests
                         for entry in requests.iter() {
                             let age = now.duration_since(entry.created_at);
-                            if age > DEFAULT_TIMEOUT * 2 {
+                            if age > DEFAULT_TIMEOUT {
                                 expired.push(*entry.key());
                             }
                         }
@@ -422,6 +435,7 @@ impl AsyncNode {
                 }
             }
         });
+        self.task_handles.lock().unwrap().push(handle);
     }
 
     /// Read and process a single response from the server
@@ -543,21 +557,6 @@ pub async fn async_block_for_result_with_timeout(
     }
 }
 
-/// VoltError extension methods for async operations
-impl VoltError {
-    pub fn message_too_large(size: usize) -> Self {
-        VoltError::MessageTooLarge(size)
-    }
-
-    pub fn connection_closed() -> Self {
-        VoltError::ConnectionClosed
-    }
-
-    pub fn timeout() -> Self {
-        VoltError::Timeout
-    }
-}
-
 // 单元测试
 #[cfg(test)]
 mod tests {
@@ -572,6 +571,7 @@ mod tests {
             stop: Arc::new(watch::channel(false).0),
             counter: Arc::new(AtomicI64::new(1)),
             pending_requests: Arc::new(AtomicUsize::new(0)),
+            task_handles: std::sync::Mutex::new(Vec::new()),
         };
 
         let seq1 = node.get_sequence();
@@ -588,7 +588,15 @@ mod tests {
             stop: Arc::new(watch::channel(false).0),
             counter: Arc::new(AtomicI64::new(1)),
             pending_requests: Arc::new(AtomicUsize::new(5)),
+            task_handles: std::sync::Mutex::new(Vec::new()),
         };
         assert_eq!(node.pending_count(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_async_block_for_result_with_timeout_expires() {
+        let (_tx, mut rx) = mpsc::channel::<VoltTable>(1);
+        let result = async_block_for_result_with_timeout(&mut rx, Duration::from_millis(50)).await;
+        assert!(matches!(result, Err(VoltError::Timeout)));
     }
 }

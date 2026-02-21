@@ -340,6 +340,8 @@ pub struct Node {
     counter: AtomicI64,
     /// Simple atomic lock for write operations. True = locked, False = unlocked.
     write_lock: AtomicBool,
+    /// Handle for the background listener thread
+    listener_handle: Option<thread::JoinHandle<()>>,
 }
 
 impl Debug for Node {
@@ -445,7 +447,7 @@ impl Node {
         let stop = Arc::new(Mutex::new(false));
 
         // Start the listener thread with the read side
-        Self::start_listener(read_stream, Arc::clone(&requests), Arc::clone(&stop));
+        let handle = Self::start_listener(read_stream, Arc::clone(&requests), Arc::clone(&stop));
 
         Ok(Node {
             stop,
@@ -454,6 +456,7 @@ impl Node {
             requests,
             counter: AtomicI64::new(1),
             write_lock: AtomicBool::new(false),
+            listener_handle: Some(handle),
         })
     }
     /// Returns the next unique sequence number for request tracking.
@@ -653,7 +656,12 @@ impl Node {
 
         let mut stream_guard = self.write_stream.lock()?;
         if let Some(stream) = stream_guard.take() {
-            stream.shutdown(Shutdown::Both)?;
+            let _ = stream.shutdown(Shutdown::Both);
+        }
+        drop(stream_guard); // release lock before join
+
+        if let Some(handle) = self.listener_handle.take() {
+            let _ = handle.join();
         }
         Ok(())
     }
@@ -665,7 +673,7 @@ impl Node {
         mut tcp: TcpStream,
         requests: Arc<Mutex<PendingRequests>>,
         stopping: Arc<Mutex<bool>>,
-    ) {
+    ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             // Reusable buffer to reduce allocation pressure.
             // Starts with 4KB capacity, grows as needed but rarely shrinks.
@@ -691,7 +699,7 @@ impl Node {
                     }
                 }
             }
-        });
+        })
     }
 }
 

@@ -386,7 +386,7 @@ fn test_pool_shutdown_graceful() -> Result<(), VoltError> {
 
     // Either got a connection before shutdown, or got shutdown error
     if let Err(e) = conn_result {
-        assert!(matches!(e, VoltError::ConnectionNotAvailable));
+        assert!(matches!(e, VoltError::PoolShutdown));
     }
 
     assert!(pool.is_shutdown());

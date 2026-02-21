@@ -182,18 +182,17 @@ pub use chrono;
 pub use crate::bigdecimal::BigDecimal;
 pub use crate::chrono::{DateTime, Utc};
 pub use crate::encode::*;
-pub use crate::error::{
-    ConcurrencyError, ConnectionError, IntoVoltError, ProtocolError, QueryError,
-};
 pub use crate::node::{OptsBuilder, *};
 pub use crate::pool::*;
 pub use crate::pool_core::{ExhaustionPolicy, ValidationMode};
 pub use crate::table::*;
 
 #[cfg(feature = "tokio")]
-pub use crate::async_node::{AsyncNode, async_block_for_result};
+pub use crate::async_node::{
+    AsyncNode, async_block_for_result, async_block_for_result_with_timeout,
+};
 #[cfg(feature = "tokio")]
-pub use crate::async_pool::{AsyncPool, AsyncPooledConn};
+pub use crate::async_pool::{AsyncPool, AsyncPoolConfig, AsyncPooledConn};
 
 #[macro_export]
 macro_rules! volt_param {

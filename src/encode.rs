@@ -1,16 +1,14 @@
 use std::fmt::Debug;
-use std::str::Utf8Error;
-use std::sync::PoisonError;
 
 use bigdecimal::BigDecimal;
 use bigdecimal::num_bigint::BigInt;
 use bytebuffer::ByteBuffer;
 use chrono::{DateTime, Utc};
-use quick_error::quick_error;
 
 use crate::Column;
 use crate::chrono::TimeZone;
-use crate::response::VoltResponseInfo;
+
+pub use crate::error::VoltError;
 
 #[allow(dead_code)]
 pub const ARRAY_COLUMN: i8 = -99;
@@ -42,110 +40,6 @@ pub const NULL_TIMESTAMP: [u8; 8] = [128, 0, 0, 0, 0, 0, 0, 0];
 
 pub const NULL_FLOAT_VALUE: [u8; 8] = [255, 239, 255, 255, 255, 255, 255, 255];
 pub const NULL_VARCHAR: [u8; 4] = [255, 255, 255, 255];
-
-quick_error! {
-#[derive(Debug)]
-pub enum VoltError {
-        Io(err: std::io::Error) {
-            from()
-            display("I/O error: {}", err)
-            source(err)
-        }
-
-        RecvError(err: std::sync::mpsc::RecvError){
-            from()
-            display("Recv error: {}", err)
-            source(err)
-        }
-
-        ExecuteFail ( info: VoltResponseInfo ){
-            display("volt execute failed: {:?}", info)
-        }
-        InvalidColumnType(tp: i8) {
-            display("InvalidColumnType {}", tp)
-        }
-
-        MessageTooLarge(tp: usize) {
-            display("MessageTooLarge {}", tp)
-        }
-
-        NoValue (descr : String) {
-            display("Error {}", descr)
-        }
-        Other(descr: String) {
-            display("Error {}", descr)
-        }
-        NegativeNumTables (num: i16) {
-             display("Error {}", num)
-        }
-
-         Utf8Error(err : Utf8Error){
-            from()
-            display("Utf8 error: {}", err)
-            source(err)
-        }
-
-        PoisonError (descr: String){
-              display("Error {}", descr)
-        }
-        BadReturnStatusOnTable (status: i8) {
-             display("Error {}", status)
-        }
-        AuthFailed {
-             display("Auth failed")
-        }
-        ConnectionNotAvailable {
-             display("Connection lost")
-        }
-        InvalidConfig {
-             display("Invalid Config")
-        }
-        Timeout {
-             display("Operation timeout")
-        }
-        ConnectionClosed {
-             display("Connection Closed")
-        }
-        /// Returned when a non-Option type encounters a NULL value.
-        /// Use Option<T> if the column may contain NULL values.
-        UnexpectedNull(column: String) {
-            display("Unexpected NULL value in column '{}'. Use Option<T> for nullable columns.", column)
-        }
-}}
-
-impl<T> From<PoisonError<T>> for VoltError {
-    fn from(p: PoisonError<T>) -> VoltError {
-        VoltError::PoisonError(p.to_string().to_owned())
-    }
-}
-
-impl VoltError {
-    /// Returns true if this error indicates a fatal connection problem
-    /// that requires the connection to be replaced/healed.
-    pub fn is_connection_fatal(&self) -> bool {
-        match self {
-            // I/O errors that indicate connection problems
-            VoltError::Io(io_err) => matches!(
-                io_err.kind(),
-                std::io::ErrorKind::ConnectionReset
-                    | std::io::ErrorKind::ConnectionRefused
-                    | std::io::ErrorKind::ConnectionAborted
-                    | std::io::ErrorKind::BrokenPipe
-                    | std::io::ErrorKind::NotConnected
-                    | std::io::ErrorKind::UnexpectedEof
-            ),
-            // Explicit connection state errors
-            VoltError::ConnectionNotAvailable => true,
-            VoltError::ConnectionClosed => true,
-            // Timeout may indicate connection issues
-            VoltError::Timeout => true,
-            // RecvError typically means the background reader thread died
-            VoltError::RecvError(_) => true,
-            // Other errors are not connection-fatal
-            _ => false,
-        }
-    }
-}
 
 pub trait ValuePrimary {}
 
@@ -623,7 +517,6 @@ impl Value for DateTime<Utc> {
 
 #[cfg(test)]
 mod tests {
-    use std::io;
     use std::str::FromStr;
 
     use bigdecimal::num_bigint::BigInt;
@@ -1115,78 +1008,5 @@ mod tests {
         let bytes = buf.into_vec();
         let result = f64::from_bytes(bytes, &col).unwrap();
         assert!((result - original).abs() < 0.00001);
-    }
-
-    // is_connection_fatal tests
-    #[test]
-    fn test_is_connection_fatal_io_connection_reset() {
-        let err = VoltError::Io(io::Error::new(io::ErrorKind::ConnectionReset, "reset"));
-        assert!(err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_io_connection_refused() {
-        let err = VoltError::Io(io::Error::new(io::ErrorKind::ConnectionRefused, "refused"));
-        assert!(err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_io_broken_pipe() {
-        let err = VoltError::Io(io::Error::new(io::ErrorKind::BrokenPipe, "broken"));
-        assert!(err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_io_not_connected() {
-        let err = VoltError::Io(io::Error::new(io::ErrorKind::NotConnected, "not connected"));
-        assert!(err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_io_unexpected_eof() {
-        let err = VoltError::Io(io::Error::new(io::ErrorKind::UnexpectedEof, "eof"));
-        assert!(err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_io_other_not_fatal() {
-        let err = VoltError::Io(io::Error::new(io::ErrorKind::InvalidData, "invalid"));
-        assert!(!err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_connection_not_available() {
-        let err = VoltError::ConnectionNotAvailable;
-        assert!(err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_connection_closed() {
-        let err = VoltError::ConnectionClosed;
-        assert!(err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_timeout() {
-        let err = VoltError::Timeout;
-        assert!(err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_no_value_not_fatal() {
-        let err = VoltError::NoValue("test".to_string());
-        assert!(!err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_auth_failed_not_fatal() {
-        let err = VoltError::AuthFailed;
-        assert!(!err.is_connection_fatal());
-    }
-
-    #[test]
-    fn test_is_connection_fatal_unexpected_null_not_fatal() {
-        let err = VoltError::UnexpectedNull("col".to_string());
-        assert!(!err.is_connection_fatal());
     }
 }

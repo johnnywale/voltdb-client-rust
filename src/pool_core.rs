@@ -3,55 +3,7 @@
 //! This module contains types and traits that are shared between
 //! `Pool` (sync) and `AsyncPool` (async) implementations.
 
-use std::fmt;
 use std::time::{Duration, Instant};
-
-use crate::encode::VoltError;
-
-// ============================================================================
-// Pool-specific errors
-// ============================================================================
-
-/// Pool-specific error conditions.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PoolError {
-    /// Pool is shutting down, no new connections allowed
-    PoolShutdown,
-    /// Circuit breaker is open for the requested connection
-    CircuitOpen,
-    /// All connections are busy or unhealthy
-    PoolExhausted,
-    /// Timed out waiting for a connection
-    Timeout,
-    /// Internal lock was poisoned
-    LockPoisoned,
-}
-
-impl fmt::Display for PoolError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            PoolError::PoolShutdown => write!(f, "Pool is shutting down"),
-            PoolError::CircuitOpen => write!(f, "Circuit breaker is open"),
-            PoolError::PoolExhausted => write!(f, "Pool exhausted, no healthy connections"),
-            PoolError::Timeout => write!(f, "Timed out waiting for connection"),
-            PoolError::LockPoisoned => write!(f, "Internal lock poisoned"),
-        }
-    }
-}
-
-impl std::error::Error for PoolError {}
-
-impl From<PoolError> for VoltError {
-    fn from(e: PoolError) -> Self {
-        match e {
-            PoolError::PoolShutdown => VoltError::ConnectionNotAvailable,
-            PoolError::CircuitOpen => VoltError::ConnectionNotAvailable,
-            PoolError::PoolExhausted => VoltError::ConnectionNotAvailable,
-            PoolError::Timeout => VoltError::Timeout,
-            PoolError::LockPoisoned => VoltError::PoisonError("Pool lock poisoned".to_string()),
-        }
-    }
-}
 
 // ============================================================================
 // Connection State Machine
@@ -337,37 +289,8 @@ mod tests {
     }
 
     #[test]
-    fn test_pool_error_display() {
-        assert_eq!(
-            format!("{}", PoolError::PoolShutdown),
-            "Pool is shutting down"
-        );
-        assert_eq!(
-            format!("{}", PoolError::CircuitOpen),
-            "Circuit breaker is open"
-        );
-        assert_eq!(
-            format!("{}", PoolError::PoolExhausted),
-            "Pool exhausted, no healthy connections"
-        );
-        assert_eq!(
-            format!("{}", PoolError::Timeout),
-            "Timed out waiting for connection"
-        );
-    }
-
-    #[test]
     fn test_pool_phase() {
         assert_eq!(PoolPhase::Running, PoolPhase::Running);
         assert_ne!(PoolPhase::Running, PoolPhase::Shutdown);
-    }
-
-    #[test]
-    fn test_pool_error_into_volt_error() {
-        let err: VoltError = PoolError::PoolShutdown.into();
-        assert!(matches!(err, VoltError::ConnectionNotAvailable));
-
-        let err: VoltError = PoolError::Timeout.into();
-        assert!(matches!(err, VoltError::Timeout));
     }
 }
