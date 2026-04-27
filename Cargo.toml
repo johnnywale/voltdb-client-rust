@@ -34,10 +34,10 @@ tracing = { version = "0.1", optional = true }
 metrics = { version = "0.24", optional = true }
 
 [dev-dependencies]
-libc = "0.2.182"
+libc = "0.2.186"
 testcontainers = { version = "0.26", features = ["blocking"] }
 lazy_static = "1.5.0"
-tokio = { version = "1.49", features = ["full"] }
+tokio = { version = "1.50", features = ["full"] }
 
 [[example]]
 name = "basic_usage"
